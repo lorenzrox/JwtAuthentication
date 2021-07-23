@@ -1,0 +1,4 @@
+LIBRARY	"JwtAuthentication"
+
+EXPORTS
+    RegisterModule
