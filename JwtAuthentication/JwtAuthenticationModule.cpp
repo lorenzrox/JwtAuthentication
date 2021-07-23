@@ -95,8 +95,8 @@ HRESULT GetCookieJwtToken(IHttpRequest* httpRequest, JWT_AUTHENTICATION_CONFIGUR
 }
 
 HRESULT GetUrlJwtToken(IHttpRequest* httpRequest, JWT_AUTHENTICATION_CONFIGURATION* pConfiguration, std::string& jwt) {
-	std::wstring url = httpRequest->GetForwardedUrl();
-	UNREFERENCED_PARAMETER(url);
+	auto rawRequest = httpRequest->GetRawHttpRequest();
+	UNREFERENCED_PARAMETER(rawRequest);
 	return S_OK;
 }
 
