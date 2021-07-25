@@ -10,8 +10,6 @@ IHttpServer* g_pHttpServer = NULL;
 //  and register for server events.
 HRESULT WINAPI RegisterModule(DWORD dwServerVersion, IHttpModuleRegistrationInfo* pModuleInfo, IHttpServer* pHttpServer)
 {
-	__debugbreak();
-
 	HRESULT hr = S_OK;
 	JwtAuthenticationModuleFactory* pFactory = NULL;
 

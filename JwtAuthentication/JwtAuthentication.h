@@ -15,9 +15,16 @@ enum class JwtValidationType {
 	Url = 2
 };
 
+enum class JwtCryptoAlgorithm {
+	HS256 = 0,
+	RS256 = 1
+};
+
 struct JWT_AUTHENTICATION_CONFIGURATION {
 	bool enabled;
 	JwtValidationType validationType;
+	JwtCryptoAlgorithm algorithm;
+	std::string path;
 	std::string key;
 };
 
