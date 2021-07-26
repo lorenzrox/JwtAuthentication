@@ -43,7 +43,7 @@ public:
 		return m_key;
 	}
 
-	inline const std::set<std::string>& GetRequiredRoles() const
+	inline const std::set<std::string, std::insensitive_compare<std::string>>& GetRequiredRoles() const
 	{
 		return m_requiredRoles;
 	}
@@ -58,6 +58,6 @@ private:
 	std::string m_key;
 	std::string m_nameGrant;
 	std::string m_roleGrant;
-	std::set<std::string> m_requiredRoles;
+	std::set<std::string, std::insensitive_compare<std::string>> m_requiredRoles;
 };
 

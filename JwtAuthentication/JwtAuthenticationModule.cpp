@@ -5,22 +5,6 @@
 
 using jwt_t = jwt::decoded_jwt<jwt::picojson_traits>;
 
-namespace std
-{
-	inline wstring to_wstring(const string& str, UINT codePage = CP_THREAD_ACP)
-	{
-		int len = ::MultiByteToWideChar(codePage, 0, str.data(), str.size(), NULL, 0);
-		if (len == 0)
-		{
-			return wstring();
-		}
-
-		wstring buffer(len, '\0');
-		::MultiByteToWideChar(codePage, 0, str.data(), str.size(), &buffer[0], len);
-		return buffer;
-	}
-}
-
 HRESULT GetHeaderJwtToken(IHttpRequest* httpRequest, JwtModuleConfiguration* pConfiguration, std::string& jwt)
 {
 	USHORT length;
@@ -189,7 +173,7 @@ HRESULT JwtAuthenticationModule::CreateUser(_In_ IHttpContext* pHttpContext, _Ou
 			auto jwtToken = jwt::decode(jwt);
 			if (ValidateJwtToken(pConfiguration, jwtToken))
 			{
-				std::set<std::string> roles;
+				std::set<std::string, std::insensitive_compare<std::string>> roles;
 				std::string userName;
 
 				auto& nameGrant = pConfiguration->GetNameGrant();
