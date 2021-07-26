@@ -97,12 +97,14 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;JWTAUTHENTION_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AdditionalIncludeDirectories>include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>JwtAuthentication.def</ModuleDefinitionFile>
+      <AdditionalDependencies>crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>copy /Y  $(OutputPath)$(TargetFileName) C:\iis\native_modules\$(TargetFileName)</Command>
@@ -117,6 +119,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;JWTAUTHENTICATION_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AdditionalIncludeDirectories>include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -125,6 +128,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>JwtAuthentication.def</ModuleDefinitionFile>
+      <AdditionalDependencies>crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>copy /Y  $(OutputPath)$(TargetFileName) C:\iis\native_modules\$(TargetFileName)</Command>
@@ -137,12 +141,14 @@
       <PreprocessorDefinitions>_DEBUG;JWTAUTHENTICATION_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AdditionalIncludeDirectories>include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>JwtAuthentication.def</ModuleDefinitionFile>
+      <AdditionalDependencies>crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>copy /Y  $(OutputPath)$(TargetFileName) C:\iis\native_modules\$(TargetFileName)</Command>
@@ -157,6 +163,7 @@
       <PreprocessorDefinitions>NDEBUG;JWTAUTHENTICATION_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AdditionalIncludeDirectories>include\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -165,19 +172,26 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <ModuleDefinitionFile>JwtAuthentication.def</ModuleDefinitionFile>
+      <AdditionalDependencies>crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>copy /Y  $(OutputPath)$(TargetFileName) C:\iis\native_modules\$(TargetFileName)</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="ApplicationEventsModule.h" />
     <ClInclude Include="JwtAuthentication.h" />
     <ClInclude Include="JwtAuthenticationModule.h" />
     <ClInclude Include="JwtAuthenticationModuleFactory.h" />
+    <ClInclude Include="JwtClaimsUser.h" />
+    <ClInclude Include="JwtModuleConfiguration.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="ApplicationEventsModule.cpp" />
     <ClCompile Include="JwtAuthenticationModule.cpp" />
     <ClCompile Include="JwtAuthenticationModuleFactory.cpp" />
+    <ClCompile Include="JwtClaimsUser.cpp" />
+    <ClCompile Include="JwtModuleConfiguration.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>

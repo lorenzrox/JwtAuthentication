@@ -24,6 +24,15 @@
     <ClInclude Include="JwtAuthentication.h">
       <Filter>File di intestazione</Filter>
     </ClInclude>
+    <ClInclude Include="ApplicationEventsModule.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="JwtModuleConfiguration.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
+    <ClInclude Include="JwtClaimsUser.h">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -33,6 +42,15 @@
       <Filter>File di origine</Filter>
     </ClCompile>
     <ClCompile Include="JwtAuthenticationModule.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="ApplicationEventsModule.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="JwtModuleConfiguration.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+    <ClCompile Include="JwtClaimsUser.cpp">
       <Filter>File di origine</Filter>
     </ClCompile>
   </ItemGroup>

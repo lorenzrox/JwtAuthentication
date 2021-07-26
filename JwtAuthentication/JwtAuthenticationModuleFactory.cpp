@@ -2,36 +2,26 @@
 #include "JwtAuthenticationModule.h"
 
 
-HRESULT JwtAuthenticationModuleFactory::GetHttpModule(_Out_ CHttpModule** ppModule, _In_ IModuleAllocator*)
+HRESULT JwtAuthenticationModuleFactory::GetHttpModule(_Out_ CHttpModule** ppModule, _In_ IModuleAllocator* pAllocator)
 {
-	HRESULT hr = S_OK;
-	JwtAuthenticationModule* pModule = NULL;
-	 
+	UNREFERENCED_PARAMETER(pAllocator);
+
 	if (ppModule == NULL)
 	{
-		hr = HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER);
-		goto Finished;
+		return E_INVALIDARG;
 	}
 
-	pModule = new JwtAuthenticationModule();
-	if (pModule == NULL)
+	auto module = std::make_unique<JwtAuthenticationModule>();
+	if (module == NULL)
 	{
-		hr = HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY);
-		goto Finished;
+		return E_OUTOFMEMORY;
 	}
 
-	*ppModule = pModule;
-	pModule = NULL;
+	HRESULT hr;
+	RETURN_IF_FAILED(hr, module->Initialize());
 
-
-Finished:
-	if (pModule != NULL)
-	{
-		delete pModule;
-		pModule = NULL;
-	}
-
-	return hr;
+	*ppModule = module.release();
+	return S_OK;
 }
 
 void JwtAuthenticationModuleFactory::Terminate()

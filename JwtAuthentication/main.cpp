@@ -1,7 +1,8 @@
 #include "JwtAuthenticationModuleFactory.h"
+#include "ApplicationEventsModule.h"
 
 //  Global module context id
-PVOID g_pModuleContext = NULL;
+HTTP_MODULE_ID g_pModuleId = NULL;
 IHttpServer* g_pHttpServer = NULL;
 
 //  The RegisterModule entrypoint implementation.
@@ -10,44 +11,33 @@ IHttpServer* g_pHttpServer = NULL;
 //  and register for server events.
 HRESULT WINAPI RegisterModule(DWORD dwServerVersion, IHttpModuleRegistrationInfo* pModuleInfo, IHttpServer* pHttpServer)
 {
-	HRESULT hr = S_OK;
-	JwtAuthenticationModuleFactory* pFactory = NULL;
-
 	if (pModuleInfo == NULL || pHttpServer == NULL)
 	{
-		hr = HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER);
-		goto Finished;
+		return E_INVALIDARG;
 	}
 
-	g_pModuleContext = pModuleInfo->GetId();
+	g_pModuleId = pModuleInfo->GetId();
 	g_pHttpServer = pHttpServer;
 
-	pFactory = new JwtAuthenticationModuleFactory();
-	if (pFactory == NULL)
+	auto applicationEvents = std::make_unique<ApplicationEventsModule>();
+	if (applicationEvents == NULL)
 	{
-		hr = HRESULT_FROM_WIN32(ERROR_NOT_ENOUGH_MEMORY);
-		goto Finished;
+		return E_OUTOFMEMORY;
 	}
 
-
-	if (FAILED(hr = pModuleInfo->SetRequestNotifications(pFactory, RQ_BEGIN_REQUEST, 0)))
+	auto moduleFactory = std::make_unique<JwtAuthenticationModuleFactory>();
+	if (moduleFactory == NULL)
 	{
-		goto Finished;
+		return E_OUTOFMEMORY;
 	}
 
-	if (FAILED(hr = pModuleInfo->SetPriorityForRequestNotification(RQ_BEGIN_REQUEST, PRIORITY_ALIAS_HIGH)))
-	{
-		goto Finished;
-	}
+	HRESULT hr;
+	//RETURN_IF_FAILED(hr, pModuleInfo->SetRequestNotifications(moduleFactory.get(), RQ_AUTHENTICATE_REQUEST, RQ_AUTHENTICATE_REQUEST));
+	RETURN_IF_FAILED(hr, pModuleInfo->SetRequestNotifications(moduleFactory.get(), RQ_BEGIN_REQUEST, 0));
+	RETURN_IF_FAILED(hr, pModuleInfo->SetPriorityForRequestNotification(RQ_BEGIN_REQUEST, PRIORITY_ALIAS_HIGH));
+	RETURN_IF_FAILED(hr, pModuleInfo->SetGlobalNotifications(applicationEvents.get(), GL_APPLICATION_START));
 
-	pFactory = NULL;
-
-Finished:
-	if (pFactory != NULL)
-	{
-		delete pFactory;
-		pFactory = NULL;
-	}
-
-	return hr;
+	moduleFactory.release();
+	applicationEvents.release();
+	return S_OK;
 }

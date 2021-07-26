@@ -12,6 +12,14 @@
 
 #include "error.h"
 
+#ifdef MIN
+#undef MIN
+#endif
+
+#ifdef MAX
+#undef MAX
+#endif
+
 namespace jwt {
 	namespace crypto {
 		namespace details {
