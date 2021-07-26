@@ -1,9 +1,8 @@
-#include <jwt-cpp/jwt.h>
+#include "jwt-cpp/jwt-cpp/jwt.h"
 #include "JwtAuthenticationModule.h"
 #include "JwtAuthenticationModuleFactory.h"
 
 using jwt_t = jwt::decoded_jwt<jwt::picojson_traits>;
-
 
 HRESULT GetConfiguration(_In_ IHttpContext* pHttpContext, _Out_ JWT_AUTHENTICATION_CONFIGURATION* pConfig) {
 	HRESULT hr;
