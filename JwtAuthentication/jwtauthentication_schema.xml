@@ -13,10 +13,14 @@
   <sectionSchema name="system.webServer/security/authentication/jwtAuthentication">
     <attribute name="enabled" type="bool" defaultValue="false" />
     <attribute name="validationType" type="enum" defaultValue="Header">
-      <enum name="Header" value="0"/>
-      <enum name="Cookie" value="1"/>
-      <enum name="Url" value="2"/>
+      <enum name="Header" value="0" />
+      <enum name="Cookie" value="1" />
+      <enum name="Url" value="2" />
     </attribute>
-    <attribute name="key" type="string" defaultValue="" />
+    <attribute name="path" type="string" defaultValue="" />
+    <attribute name="algorithm" type="enum" defaultValue="HS256">
+      <enum name="HS256" value="0" />
+      <enum name="RS256" value="1" />
+    </attribute>
   </sectionSchema>
 </configSchema>

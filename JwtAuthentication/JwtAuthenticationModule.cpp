@@ -43,36 +43,49 @@ HRESULT GetConfiguration(_In_ IHttpContext* pHttpContext, _Out_ JWT_AUTHENTICATI
 		pConfig->validationType = JwtValidationType::Header;
 	}
 
-	RETURN_IF_FAILED(hr, configurationElement->GetPropertyByName(CComBSTR(L"key"), &configurationProperty));
+	RETURN_IF_FAILED(hr, configurationElement->GetPropertyByName(CComBSTR(L"path"), &configurationProperty));
 
 	if (configurationProperty) {
-		VARIANT key;
-		VariantInit(&key);
+		VARIANT path;
+		VariantInit(&path);
 
-		RETURN_IF_FAILED(hr, configurationProperty->get_Value(&key));
+		RETURN_IF_FAILED(hr, configurationProperty->get_Value(&path));
 
-		if (key.bstrVal) {
-			pConfig->key = CW2A(key.bstrVal);
+		if (path.bstrVal) {
+			pConfig->path = CW2A(path.bstrVal);
 		}
 		else {
-			pConfig->key.clear();
+			pConfig->path.clear();
 		}
 
-		RETURN_IF_FAILED(hr, VariantClear(&key));
+		RETURN_IF_FAILED(hr, VariantClear(&path));
+	}
+
+	RETURN_IF_FAILED(hr, configurationElement->GetPropertyByName(CComBSTR(L"algorithm"), &configurationProperty));
+
+	if (configurationProperty) {
+		VARIANT algorithm;
+		VariantInit(&algorithm);
+
+		RETURN_IF_FAILED(hr, configurationProperty->get_Value(&algorithm));
+
+		pConfig->algorithm = static_cast<JwtCryptoAlgorithm>(algorithm.intVal);
+
+		RETURN_IF_FAILED(hr, VariantClear(&algorithm));
 	}
 
 	return S_OK;
 }
 
-HRESULT GetHeaderJwtToken(IHttpRequest* httpRequest, JWT_AUTHENTICATION_CONFIGURATION* pConfiguration, std::string& jwt) {
+HRESULT GetHeaderJwtToken(IHttpRequest* httpRequest, const JWT_AUTHENTICATION_CONFIGURATION* pConfiguration, std::string& jwt) {
 	USHORT length;
 
 	PCSTR headerValue;
-	if (pConfiguration->key.empty()) {
+	if (pConfiguration->path.empty()) {
 		headerValue = httpRequest->GetHeader(HttpHeaderAuthorization, &length);
 	}
 	else {
-		headerValue = httpRequest->GetHeader(pConfiguration->key.data(), &length);
+		headerValue = httpRequest->GetHeader(pConfiguration->path.data(), &length);
 	}
 
 	if (!headerValue) {
@@ -89,14 +102,34 @@ HRESULT GetHeaderJwtToken(IHttpRequest* httpRequest, JWT_AUTHENTICATION_CONFIGUR
 	return S_OK;
 }
 
-HRESULT GetCookieJwtToken(IHttpRequest* httpRequest, JWT_AUTHENTICATION_CONFIGURATION* pConfiguration, std::string& jwt) {
+HRESULT GetCookieJwtToken(IHttpRequest* httpRequest, const JWT_AUTHENTICATION_CONFIGURATION* pConfiguration, std::string& jwt) {
 	return S_OK;
 }
 
-HRESULT GetUrlJwtToken(IHttpRequest* httpRequest, JWT_AUTHENTICATION_CONFIGURATION* pConfiguration, std::string& jwt) {
+HRESULT GetUrlJwtToken(IHttpRequest* httpRequest, const JWT_AUTHENTICATION_CONFIGURATION* pConfiguration, std::string& jwt) {
 	auto rawRequest = httpRequest->GetRawHttpRequest();
 	UNREFERENCED_PARAMETER(rawRequest);
 	return S_OK;
+}
+
+bool VerifyJwtToken(const JWT_AUTHENTICATION_CONFIGURATION* pConfiguration, const jwt_t& jwtToken) {
+	if (pConfiguration->key.empty()) {
+		return true;
+	}
+
+	std::error_code error;
+
+	switch (pConfiguration->algorithm)
+	{
+	case JwtCryptoAlgorithm::RS256:
+		jwt::verify().allow_algorithm(jwt::algorithm::rs256(pConfiguration->key)).verify(jwtToken, error);
+		break;
+	default:
+		jwt::verify().allow_algorithm(jwt::algorithm::hs256(pConfiguration->key)).verify(jwtToken, error);
+		break;
+	}
+
+	return static_cast<bool>(error);
 }
 
 REQUEST_NOTIFICATION_STATUS Error(IHttpResponse* httpResponse, HRESULT hr) {
@@ -106,12 +139,14 @@ REQUEST_NOTIFICATION_STATUS Error(IHttpResponse* httpResponse, HRESULT hr) {
 
 REQUEST_NOTIFICATION_STATUS JwtAuthenticationModule::OnBeginRequest(_In_ IHttpContext* pHttpContext, _In_ IHttpEventProvider* pProvider)
 {
+	__debugbreak();
+
 	UNREFERENCED_PARAMETER(pProvider);
 
 	HRESULT hr;
 	std::string jwt;
-	JWT_AUTHENTICATION_CONFIGURATION configuration;
 	IHttpRequest* httpRequest;
+	JWT_AUTHENTICATION_CONFIGURATION configuration = {};
 	IHttpResponse* httpResponse = pHttpContext->GetResponse();
 
 	if (!httpResponse) {
@@ -147,14 +182,13 @@ REQUEST_NOTIFICATION_STATUS JwtAuthenticationModule::OnBeginRequest(_In_ IHttpCo
 		break;
 	}
 
-	if (jwt.empty()) {
-		httpResponse->SetStatus(401, "Invalid JWT token");
-		return RQ_NOTIFICATION_FINISH_REQUEST;
+	if (!jwt.empty()) {
+		auto jwtToken = jwt::decode(jwt);
+		if (VerifyJwtToken(&configuration, jwtToken)) {
+			return RQ_NOTIFICATION_CONTINUE;
+		}
 	}
 
-	auto token = jwt::decode(jwt);
-
-	UNREFERENCED_PARAMETER(token);
-
-	return RQ_NOTIFICATION_CONTINUE;
+	httpResponse->SetStatus(401, "Invalid JWT token");
+	return RQ_NOTIFICATION_FINISH_REQUEST;
 }
