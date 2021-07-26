@@ -116,12 +116,8 @@ HRESULT ReadKeyFile(_In_ IHttpApplication* pApplication, _In_ BSTR path, std::st
 	return S_OK;
 }
 
-HRESULT JwtModuleConfiguration::Initialize(_In_ IHttpApplication* pApplication)
+HRESULT JwtModuleConfiguration::Reload(_In_ IHttpApplication* pApplication)
 {
-	if (pApplication == NULL)
-	{
-		return E_INVALIDARG;
-	}
 
 	HRESULT hr;
 	CComPtr<IAppHostElement> configurationElement;
@@ -130,6 +126,15 @@ HRESULT JwtModuleConfiguration::Initialize(_In_ IHttpApplication* pApplication)
 	RETURN_IF_FAILED(hr, g_pHttpServer->GetAdminManager()->GetAdminSection(CComBSTR(L"system.webServer/security/authentication/jwtAuthentication"),
 		CComBSTR(pApplication->GetAppConfigPath()), &configurationElement));
 
+	m_enabled = false;
+	m_validationType = JwtValidationType::Header;
+	m_algorithm = JwtCryptoAlgorithm::RS256;
+	m_path.clear();
+	m_nameGrant.clear();
+	m_roleGrant.clear();
+	m_key.clear();
+	m_requiredRoles.clear();
+
 	RETURN_IF_FAILED(hr, configurationElement->GetPropertyByName(CComBSTR(L"enabled"), &configurationProperty));
 	if (configurationProperty)
 	{
@@ -137,10 +142,6 @@ HRESULT JwtModuleConfiguration::Initialize(_In_ IHttpApplication* pApplication)
 		RETURN_IF_FAILED(hr, configurationProperty->get_Value(&enabled));
 
 		m_enabled = enabled->boolVal != FALSE;
-	}
-	else
-	{
-		m_enabled = false;
 	}
 
 	RETURN_IF_FAILED(hr, configurationElement->GetPropertyByName(CComBSTR(L"validationType"), &configurationProperty));
@@ -151,10 +152,6 @@ HRESULT JwtModuleConfiguration::Initialize(_In_ IHttpApplication* pApplication)
 		RETURN_IF_FAILED(hr, configurationProperty->get_Value(&validationType));
 
 		m_validationType = static_cast<JwtValidationType>(validationType->intVal);
-	}
-	else
-	{
-		m_validationType = JwtValidationType::Header;
 	}
 
 	RETURN_IF_FAILED(hr, configurationElement->GetPropertyByName(CComBSTR(L"path"), &configurationProperty));
@@ -310,7 +307,7 @@ HRESULT JwtModuleConfiguration::EnsureConfiguration(_In_ IHttpApplication* pAppl
 		}
 
 		HRESULT hr;
-		RETURN_IF_FAILED(hr, configuration->Initialize(pApplication));
+		RETURN_IF_FAILED(hr, configuration->Reload(pApplication));
 		RETURN_IF_FAILED(hr, contextContainer->SetModuleContext(configuration.get(), g_pModuleId));
 
 		*ppConfiguration = configuration.release();

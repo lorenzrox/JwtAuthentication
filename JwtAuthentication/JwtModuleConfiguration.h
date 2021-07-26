@@ -6,7 +6,7 @@ class JwtModuleConfiguration : public IHttpStoredContext
 public:
 	virtual void CleanupStoredContext();
 
-	HRESULT Initialize(_In_ IHttpApplication* pApplication);
+	HRESULT Reload(_In_ IHttpApplication* pApplication);
 
 	inline bool IsEnabled() const
 	{
