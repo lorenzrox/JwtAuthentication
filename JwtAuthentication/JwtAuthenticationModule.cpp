@@ -173,7 +173,7 @@ HRESULT GetCookieJwtToken(IHttpRequest* httpRequest, JwtModuleConfiguration* pCo
 	std::string  path = pConfiguration->GetPath();
 	if (path.empty())
 	{
-		static const std::string& DefaultCookieName = "JWT";
+		static const std::string& DefaultCookieName = "access_token";
 		path = DefaultCookieName;
 	}
 
