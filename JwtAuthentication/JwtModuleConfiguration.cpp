@@ -57,40 +57,14 @@ private:
 	VARIANT value;
 };
 
-std::string ConvertWCSToMBS(const wchar_t* pstr, UINT wslen)
-{
-	int len = ::WideCharToMultiByte(CP_ACP, 0, pstr, wslen, NULL, 0, NULL, NULL);
-
-	std::string dblstr(len, '\0');
-	::WideCharToMultiByte(CP_ACP, 0, pstr, wslen, &dblstr[0], len, NULL, NULL);
-
-	return dblstr;
-}
-
-BSTR ConvertMBSToBSTR(const std::string& str)
-{
-	int wslen = ::MultiByteToWideChar(CP_ACP, 0, str.data(), str.length(), NULL, 0);
-
-	BSTR wsdata = ::SysAllocStringLen(NULL, wslen);
-	::MultiByteToWideChar(CP_ACP, 0, str.data(), str.length(), wsdata, wslen);
-
-	return wsdata;
-}
-
-std::string ConvertBSTRToMBS(BSTR bstr)
-{
-	UINT wslen = ::SysStringLen(bstr);
-	return ConvertWCSToMBS(bstr, wslen);
-}
-
-HRESULT ReadKeyFile(_In_ IHttpApplication* pApplication, _In_ BSTR path, std::string& result)
+HRESULT ReadKeyFile(const std::wstring& physicalPath, _In_ BSTR path, std::string& result)
 {
 	if (!SysStringLen(path)) {
 		return S_FALSE;
 	}
 
 	WCHAR keyFileName[MAX_PATH] = L"";
-	if (!PathCombineW(keyFileName, pApplication->GetApplicationPhysicalPath(), path))
+	if (!PathCombineW(keyFileName, physicalPath.data(), path))
 	{
 		return HRESULT_FROM_WIN32(GetLastError());
 	}
@@ -116,7 +90,25 @@ HRESULT ReadKeyFile(_In_ IHttpApplication* pApplication, _In_ BSTR path, std::st
 	return S_OK;
 }
 
-HRESULT JwtModuleConfiguration::Reload(_In_ IHttpApplication* pApplication)
+JwtModuleConfiguration::JwtModuleConfiguration() :
+	m_refCount(1)
+{
+}
+
+void JwtModuleConfiguration::ReferenceConfiguration() noexcept
+{
+	InterlockedIncrement(&m_refCount);
+}
+
+void JwtModuleConfiguration::DereferenceConfiguration() noexcept
+{
+	if (InterlockedDecrement(&m_refCount) == 0)
+	{
+		delete this;
+	}
+}
+
+HRESULT JwtModuleConfiguration::Reload(const std::wstring& physicalPath, const std::wstring& configurationPath)
 {
 
 	HRESULT hr;
@@ -124,7 +116,7 @@ HRESULT JwtModuleConfiguration::Reload(_In_ IHttpApplication* pApplication)
 	CComPtr<IAppHostProperty> configurationProperty;
 
 	RETURN_IF_FAILED(hr, g_pHttpServer->GetAdminManager()->GetAdminSection(CComBSTR(L"system.webServer/security/authentication/jwtAuthentication"),
-		CComBSTR(pApplication->GetAppConfigPath()), &configurationElement));
+		CComBSTR(configurationPath.size(), configurationPath.data()), &configurationElement));
 
 	m_enabled = false;
 	m_validationType = JwtValidationType::Header;
@@ -163,7 +155,7 @@ HRESULT JwtModuleConfiguration::Reload(_In_ IHttpApplication* pApplication)
 
 		UINT len = SysStringLen(path->bstrVal);
 		if (len) {
-			m_path = ConvertWCSToMBS(path->bstrVal, len);
+			m_path = std::to_string(path->bstrVal, len);
 		}
 	}
 
@@ -188,7 +180,7 @@ HRESULT JwtModuleConfiguration::Reload(_In_ IHttpApplication* pApplication)
 
 		UINT len = SysStringLen(nameGrant->bstrVal);
 		if (len) {
-			m_nameGrant = ConvertWCSToMBS(nameGrant->bstrVal, len);
+			m_nameGrant = std::to_string(nameGrant->bstrVal, len);
 		}
 	}
 
@@ -201,7 +193,7 @@ HRESULT JwtModuleConfiguration::Reload(_In_ IHttpApplication* pApplication)
 
 		UINT len = SysStringLen(roleGrant->bstrVal);
 		if (len) {
-			m_roleGrant = ConvertWCSToMBS(roleGrant->bstrVal, len);
+			m_roleGrant = std::to_string(roleGrant->bstrVal, len);
 		}
 	}
 
@@ -237,7 +229,7 @@ HRESULT JwtModuleConfiguration::Reload(_In_ IHttpApplication* pApplication)
 
 					UINT len = SysStringLen(requiredRole->bstrVal);
 					if (len) {
-						m_requiredRoles.insert(ConvertWCSToMBS(requiredRole->bstrVal, len));
+						m_requiredRoles.insert(std::to_string(requiredRole->bstrVal, len));
 					}
 				}
 
@@ -255,7 +247,7 @@ HRESULT JwtModuleConfiguration::Reload(_In_ IHttpApplication* pApplication)
 			Variant keySource;
 			RETURN_IF_FAILED(hr, configurationProperty->get_Value(&keySource));
 
-			RETURN_IF_FAILED(hr, ReadKeyFile(pApplication, keySource->bstrVal, m_key));
+			RETURN_IF_FAILED(hr, ReadKeyFile(physicalPath, keySource->bstrVal, m_key));
 			if (hr == S_OK)
 			{
 				return S_OK;
@@ -273,7 +265,7 @@ HRESULT JwtModuleConfiguration::Reload(_In_ IHttpApplication* pApplication)
 		UINT len = SysStringLen(key->bstrVal);
 		if (len)
 		{
-			m_key = ConvertWCSToMBS(key->bstrVal, len);
+			m_key = std::to_string(key->bstrVal, len);
 		}
 	}
 
@@ -282,7 +274,7 @@ HRESULT JwtModuleConfiguration::Reload(_In_ IHttpApplication* pApplication)
 
 void JwtModuleConfiguration::CleanupStoredContext()
 {
-	delete this;
+	DereferenceConfiguration();
 }
 
 HRESULT JwtModuleConfiguration::EnsureConfiguration(_In_ IHttpApplication* pApplication, _Out_ JwtModuleConfiguration** ppConfiguration)
@@ -307,7 +299,7 @@ HRESULT JwtModuleConfiguration::EnsureConfiguration(_In_ IHttpApplication* pAppl
 		}
 
 		HRESULT hr;
-		RETURN_IF_FAILED(hr, configuration->Reload(pApplication));
+		RETURN_IF_FAILED(hr, configuration->Reload(pApplication->GetApplicationPhysicalPath(), pApplication->GetAppConfigPath()));
 		RETURN_IF_FAILED(hr, contextContainer->SetModuleContext(configuration.get(), g_pModuleId));
 
 		*ppConfiguration = configuration.release();

@@ -1,12 +1,17 @@
 #pragma once
 #include "JwtAuthentication.h"
+#include "StringHelper.h"
 
-class JwtModuleConfiguration : public IHttpStoredContext
+class JwtModuleConfiguration : IHttpStoredContext
 {
 public:
-	virtual void CleanupStoredContext();
+	JwtModuleConfiguration();
+	JwtModuleConfiguration(const JwtModuleConfiguration&) = delete;
+	const JwtModuleConfiguration& operator=(const JwtModuleConfiguration&) = delete;
 
-	HRESULT Reload(_In_ IHttpApplication* pApplication);
+	HRESULT Reload(const std::wstring& physicalPath, const std::wstring& configurationPath);
+	void ReferenceConfiguration() noexcept;
+	void DereferenceConfiguration() noexcept;
 
 	inline bool IsEnabled() const
 	{
@@ -51,6 +56,9 @@ public:
 	static HRESULT EnsureConfiguration(_In_ IHttpApplication* pApplication, _Out_ JwtModuleConfiguration** ppConfiguration);
 
 private:
+	virtual void CleanupStoredContext();
+
+	mutable LONG m_refCount;
 	bool m_enabled;
 	JwtValidationType m_validationType;
 	JwtCryptoAlgorithm m_algorithm;

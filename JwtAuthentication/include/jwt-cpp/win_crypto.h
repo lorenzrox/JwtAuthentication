@@ -706,7 +706,7 @@ namespace jwt {
 					std::string name)
 					: hash_alg(hash_alg), alg_name(std::move(name)) {
 					if (!private_key.empty()) {
-						helper::load_private_key_from_string(private_key, private_key_password);
+						pkey = helper::load_private_key_from_string(private_key, private_key_password);
 					} else if (!public_key.empty()) {
 						pkey = helper::load_public_key_from_string(public_key, public_key_password);
 					} else {

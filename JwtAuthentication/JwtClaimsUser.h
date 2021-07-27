@@ -19,7 +19,7 @@ public:
 	virtual PVOID GetUserVariable(_In_ PCSTR pszVariableName);
 
 private:
-	DWORD m_refCount;
+	mutable LONG m_refCount;
 	const std::wstring m_userName;
 	const std::set<std::wstring> m_roles;
 };

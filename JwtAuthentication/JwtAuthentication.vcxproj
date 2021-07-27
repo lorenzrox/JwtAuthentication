@@ -185,6 +185,8 @@
     <ClInclude Include="JwtAuthenticationModuleFactory.h" />
     <ClInclude Include="JwtClaimsUser.h" />
     <ClInclude Include="JwtModuleConfiguration.h" />
+    <ClInclude Include="StringHelper.h" />
+    <ClInclude Include="SWRLock.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ApplicationEventsModule.cpp" />

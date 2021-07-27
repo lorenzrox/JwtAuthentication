@@ -2,36 +2,160 @@
 #include "JwtAuthenticationModule.h"
 #include "JwtAuthenticationModuleFactory.h"
 #include "JwtModuleConfiguration.h"
+#include "StringHelper.h"
 
 using jwt_t = jwt::decoded_jwt<jwt::picojson_traits>;
+
+std::string UrlDecode(PCWSTR pStart, PCWSTR pEnd)
+{
+	WCHAR a, b;
+	size_t offset = 0;
+	std::string result(MB_CUR_MAX * (pEnd - pStart), '\0');
+
+	PCWSTR pCurrent = pStart;
+	while (pCurrent < pEnd)
+	{
+		if (*pCurrent == L'%' && (pCurrent + 2 < pEnd) && (a = pCurrent[1]) && (b = pCurrent[2]) && isxdigit(a) && isxdigit(b))
+		{
+			if (a >= L'a')
+			{
+				a -= (L'a' - L'A');
+			}
+
+			if (a >= L'A')
+			{
+				a -= (L'A' - 10);
+			}
+			else
+			{
+				a -= L'0';
+			}
+
+			if (b >= L'a')
+			{
+				b -= (L'a' - L'A');
+			}
+
+			if (b >= L'A')
+			{
+				b -= (L'A' - 10);
+			}
+			else
+			{
+				b -= L'0';
+			}
+
+			int len;
+			if (wctomb_s(&len, &result[offset], result.size(), 16 * a + b) == 0)
+			{
+				offset += len;
+			}
+
+			pCurrent += 3;
+		}
+		else if (*pCurrent == L'+')
+		{
+			result[offset++] = ' ';
+			pCurrent++;
+		}
+		else
+		{
+			int len;
+			if (wctomb_s(&len, &result[offset], result.size(), *pCurrent++) == 0)
+			{
+				offset += len;
+			}
+		}
+	}
+
+	result.resize(offset);
+	return result;
+}
+
+std::string UrlDecode(PCSTR pStart, PCSTR pEnd)
+{
+	char a, b;
+	size_t offset = 0;
+	std::string result(pEnd - pStart, '\0');
+
+	PCSTR pCurrent = pStart;
+	while (pCurrent < pEnd)
+	{
+		if (*pCurrent == L'%' && (pCurrent + 2 < pEnd) && (a = pCurrent[1]) && (b = pCurrent[2]) && isxdigit(a) && isxdigit(b))
+		{
+			if (a >= L'a')
+			{
+				a -= (L'a' - L'A');
+			}
+
+			if (a >= L'A')
+			{
+				a -= (L'A' - 10);
+			}
+			else
+			{
+				a -= L'0';
+			}
+
+			if (b >= L'a')
+			{
+				b -= (L'a' - L'A');
+			}
+
+			if (b >= L'A')
+			{
+				b -= (L'A' - 10);
+			}
+			else
+			{
+				b -= L'0';
+			}
+
+			result[offset++] = 16 * a + b;
+			pCurrent += 3;
+		}
+		else if (*pCurrent == L'+')
+		{
+			result[offset++] = ' ';
+			pCurrent++;
+		}
+		else
+		{
+			result[offset++] = *pCurrent++;
+		}
+	}
+
+	result.resize(offset);
+	return result;
+}
 
 HRESULT GetHeaderJwtToken(IHttpRequest* httpRequest, JwtModuleConfiguration* pConfiguration, std::string& jwt)
 {
 	USHORT length;
-	PCSTR headerValue;
+	PCSTR pHeaderValue;
 
 	auto& path = pConfiguration->GetPath();
 	if (path.empty())
 	{
-		headerValue = httpRequest->GetHeader(HttpHeaderAuthorization, &length);
+		pHeaderValue = httpRequest->GetHeader(HttpHeaderAuthorization, &length);
 	}
 	else
 	{
-		headerValue = httpRequest->GetHeader(path.data(), &length);
+		pHeaderValue = httpRequest->GetHeader(path.data(), &length);
 	}
 
-	if (!headerValue)
+	if (length == 0)
 	{
 		return S_FALSE;
 	}
 
-	if (_strnicmp(headerValue, "Bearer ", 7) == 0)
+	if (_strnicmp(pHeaderValue, "Bearer ", 7) == 0)
 	{
-		jwt = std::string(headerValue + 7, length - 7);
+		jwt = std::string(pHeaderValue + 7, length - 7);
 	}
 	else
 	{
-		jwt = std::string(headerValue, length);
+		jwt = std::string(pHeaderValue, length);
 	}
 
 	return S_OK;
@@ -39,14 +163,91 @@ HRESULT GetHeaderJwtToken(IHttpRequest* httpRequest, JwtModuleConfiguration* pCo
 
 HRESULT GetCookieJwtToken(IHttpRequest* httpRequest, JwtModuleConfiguration* pConfiguration, std::string& jwt)
 {
-	return S_OK;
+	USHORT length;
+	PCSTR pCookie = httpRequest->GetHeader(HttpHeaderCookie, &length);
+	if (length == 0)
+	{
+		return S_FALSE;
+	}
+
+	std::string  path = pConfiguration->GetPath();
+	if (path.empty())
+	{
+		static const std::string& DefaultCookieName = "JWT";
+		path = DefaultCookieName;
+	}
+
+	PCSTR pCookieEnd = pCookie + length;
+
+	while (pCookie < pCookieEnd)
+	{
+		PCSTR pParamEnd = strchr(pCookie, ';');
+		if (pParamEnd == NULL)
+		{
+			pParamEnd = pCookieEnd;
+		}
+
+		if (_strnicmp(path.data(), pCookie, path.size()) == 0)
+		{
+			pCookie += path.size();
+
+			if (pCookie < pParamEnd && *pCookie == L'=')
+			{
+				jwt = UrlDecode(++pCookie, pParamEnd);
+				return S_OK;
+			}
+		}
+
+		pCookie = pParamEnd + 1;
+
+		while (*pCookie == ' ') 
+		{
+			pCookie++;
+		}
+	}
+
+	return S_FALSE;
 }
 
 HRESULT GetUrlJwtToken(IHttpRequest* httpRequest, const JwtModuleConfiguration* pConfiguration, std::string& jwt)
 {
+	auto path = std::to_wstring(pConfiguration->GetPath());
+	if (path.empty())
+	{
+		static const std::wstring& DefaultUrlParameter = L"access_token";
+		path = DefaultUrlParameter;
+	}
+
 	auto rawRequest = httpRequest->GetRawHttpRequest();
-	UNREFERENCED_PARAMETER(rawRequest);
-	return S_OK;
+	if (rawRequest->CookedUrl.pQueryString)
+	{
+		PCWSTR pParamStart = rawRequest->CookedUrl.pQueryString + 1;
+		PCWSTR pQueryEnd = rawRequest->CookedUrl.pQueryString + rawRequest->CookedUrl.QueryStringLength / sizeof(WCHAR);
+
+		while (pParamStart < pQueryEnd)
+		{
+			PCWSTR pParamEnd = wcschr(pParamStart, L'&');
+			if (pParamEnd == NULL)
+			{
+				pParamEnd = pQueryEnd;
+			}
+
+			if (_wcsnicmp(path.data(), pParamStart, path.size()) == 0)
+			{
+				pParamStart += path.size();
+
+				if (pParamStart < pParamEnd && *pParamStart == L'=')
+				{
+					jwt = UrlDecode(++pParamStart, pParamEnd);
+					return S_OK;
+				}
+			}
+
+			pParamStart = pParamEnd + 1;
+		}
+	}
+
+	return S_FALSE;
 }
 
 bool CheckAlgorithm(const std::string& algorithm, JwtModuleConfiguration* pConfiguration)
@@ -105,7 +306,7 @@ bool ValidateJwtToken(JwtModuleConfiguration* pConfiguration, const jwt_t& jwtTo
 	return static_cast<bool>(error);
 }
 
-REQUEST_NOTIFICATION_STATUS Error(_In_ IHttpContext* pHttpContext, HRESULT hr)
+inline REQUEST_NOTIFICATION_STATUS Error(_In_ IHttpContext* pHttpContext, IHttpEventProvider* pProvider, HRESULT hr)
 {
 	pHttpContext->GetResponse()->SetStatus(500, "Server Error", 0, hr);
 	pHttpContext->SetRequestHandled();
@@ -265,14 +466,12 @@ REQUEST_NOTIFICATION_STATUS JwtAuthenticationModule::OnBeginRequest(_In_ IHttpCo
 	__debugbreak();
 #endif
 
-	UNREFERENCED_PARAMETER(pProvider);
-
 	std::unique_ptr<JwtClaimsUser> user;
 	HRESULT hr = CreateUser(pHttpContext, user);
 
 	if (FAILED(hr))
 	{
-		return Error(pHttpContext, hr);
+		return Error(pHttpContext, pProvider, hr);
 	}
 	else if (hr == S_FALSE) {
 		pHttpContext->GetResponse()->SetStatus(401, "Invalid JWT token");
@@ -295,7 +494,7 @@ REQUEST_NOTIFICATION_STATUS JwtAuthenticationModule::OnAuthenticateRequest(_In_ 
 
 	if (FAILED(hr))
 	{
-		return Error(pHttpContext, hr);
+		return Error(pHttpContext, pProvider, hr);
 	}
 	else if (hr == S_FALSE) {
 		pHttpContext->GetResponse()->SetStatus(401, "Invalid JWT token");
