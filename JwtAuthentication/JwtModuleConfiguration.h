@@ -2,16 +2,29 @@
 #include "JwtAuthentication.h"
 #include "StringHelper.h"
 
+struct JwtGrantMapping
+{
+	std::string Header;
+	bool Replace;
+};
+
+struct JwtAuthenticationPolicy
+{
+	std::insensitive_unordered_set<std::string> Users;
+	std::insensitive_unordered_set<std::string> Roles;
+};
+
 class JwtModuleConfiguration : IHttpStoredContext
 {
 public:
-	JwtModuleConfiguration();
+	JwtModuleConfiguration(std::wstring&& phyiscalPath, std::wstring&& configurationPath);
 	JwtModuleConfiguration(const JwtModuleConfiguration&) = delete;
 	const JwtModuleConfiguration& operator=(const JwtModuleConfiguration&) = delete;
 
-	HRESULT Reload(const std::wstring& physicalPath, const std::wstring& configurationPath);
+	HRESULT Reload();
 	void ReferenceConfiguration() noexcept;
 	void DereferenceConfiguration() noexcept;
+	bool Applies(const std::wstring& configuration) const noexcept;
 
 	inline bool IsEnabled() const
 	{
@@ -48,9 +61,14 @@ public:
 		return m_key;
 	}
 
-	inline const std::set<std::string, std::insensitive_compare<std::string>>& GetRequiredRoles() const
+	inline const std::vector<JwtAuthenticationPolicy>& GetPolicies() const
 	{
-		return m_requiredRoles;
+		return m_policies;
+	}
+
+	inline const std::insensitive_unordered_map<std::string, const JwtGrantMapping>& GetGrantMappings() const
+	{
+		return m_grantMappings;
 	}
 
 	static HRESULT EnsureConfiguration(_In_ IHttpApplication* pApplication, _Out_ JwtModuleConfiguration** ppConfiguration);
@@ -66,6 +84,9 @@ private:
 	std::string m_key;
 	std::string m_nameGrant;
 	std::string m_roleGrant;
-	std::set<std::string, std::insensitive_compare<std::string>> m_requiredRoles;
+	std::wstring m_configurationPath;
+	std::wstring m_phyiscalPath;
+	std::vector<JwtAuthenticationPolicy> m_policies;
+	std::insensitive_unordered_map<std::string, const JwtGrantMapping> m_grantMappings;
 };
 

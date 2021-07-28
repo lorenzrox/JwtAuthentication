@@ -200,7 +200,7 @@ HRESULT GetCookieJwtToken(IHttpRequest* httpRequest, JwtModuleConfiguration* pCo
 
 		pCookie = pParamEnd + 1;
 
-		while (*pCookie == ' ') 
+		while (*pCookie == ' ')
 		{
 			pCookie++;
 		}
@@ -263,7 +263,7 @@ bool CheckAlgorithm(const std::string& algorithm, JwtModuleConfiguration* pConfi
 	return false;
 }
 
-bool ValidateJwtToken(JwtModuleConfiguration* pConfiguration, const jwt_t& jwtToken)
+bool ValidateJwtTokenSignature(JwtModuleConfiguration* pConfiguration, const jwt_t& jwtToken)
 {
 	if (jwtToken.has_expires_at())
 	{
@@ -306,12 +306,81 @@ bool ValidateJwtToken(JwtModuleConfiguration* pConfiguration, const jwt_t& jwtTo
 	return static_cast<bool>(error);
 }
 
+bool ValidateJwtTokenPolicies(JwtModuleConfiguration* pConfiguration, const std::string& userName, const std::insensitive_unordered_set<std::string>& roles)
+{
+	auto& policies = pConfiguration->GetPolicies();
+	if (policies.empty())
+	{
+		return true;
+	}
+
+	for (auto& policy : policies)
+	{
+		if (!policy.Users.empty())
+		{
+			if (userName.empty() || policy.Users.find(userName) == policy.Users.end())
+			{
+				continue;
+			}
+		}
+
+		if (policy.Roles.size() > roles.size())
+		{
+			continue;
+		}
+
+		for (auto& role : policy.Roles)
+		{
+			if (roles.find(role) == roles.end())
+			{
+				continue;
+			}
+		}
+
+		return true;
+	}
+
+	return false;
+}
+
 inline REQUEST_NOTIFICATION_STATUS Error(_In_ IHttpContext* pHttpContext, IHttpEventProvider* pProvider, HRESULT hr)
 {
 	pHttpContext->GetResponse()->SetStatus(500, "Server Error", 0, hr);
 	pHttpContext->SetRequestHandled();
 
 	return RQ_NOTIFICATION_FINISH_REQUEST;
+}
+
+inline void GetJwtTokenRoles(JwtModuleConfiguration* pConfiguration, const jwt_t& jwtToken, std::insensitive_unordered_set<std::string>& roles)
+{
+	auto& roleGrant = pConfiguration->GetRoleGrant();
+	if (!roleGrant.empty() && jwtToken.has_payload_claim(roleGrant))
+	{
+		auto claim = jwtToken.get_payload_claim(roleGrant);
+		if (claim.get_type() == jwt::json::type::array)
+		{
+			for (const auto& value : claim.as_array())
+			{
+				if (value.is<std::string>())
+				{
+					roles.insert(value.get<std::string>());
+				}
+			}
+		}
+		else
+		{
+			roles.insert(claim.as_string());
+		}
+	}
+}
+
+inline void GetJwtTokenUser(JwtModuleConfiguration* pConfiguration, const jwt_t& jwtToken, std::string& userName)
+{
+	auto& nameGrant = pConfiguration->GetNameGrant();
+	if (!nameGrant.empty() && jwtToken.has_payload_claim(nameGrant))
+	{
+		userName = jwtToken.get_payload_claim(nameGrant).as_string();
+	}
 }
 
 
@@ -351,9 +420,13 @@ HRESULT JwtAuthenticationModule::CreateUser(_In_ IHttpContext* pHttpContext, _Ou
 		return S_OK;
 	}
 
-	std::string jwt;
 	IHttpRequest* httpRequest = pHttpContext->GetRequest();
+	if (_strnicmp("OPTIONS", httpRequest->GetHttpMethod(), 7) == 0)
+	{
+		return S_OK;
+	}
 
+	std::string jwt;
 	switch (pConfiguration->GetValidationType())
 	{
 	case JwtValidationType::Cookie:
@@ -372,84 +445,64 @@ HRESULT JwtAuthenticationModule::CreateUser(_In_ IHttpContext* pHttpContext, _Ou
 		try
 		{
 			auto jwtToken = jwt::decode(jwt);
-			if (ValidateJwtToken(pConfiguration, jwtToken))
+			if (!ValidateJwtTokenSignature(pConfiguration, jwtToken))
 			{
-				std::set<std::string, std::insensitive_compare<std::string>> roles;
-				std::string userName;
-
-				auto& nameGrant = pConfiguration->GetNameGrant();
-				if (!nameGrant.empty() && jwtToken.has_payload_claim(nameGrant))
-				{
-					userName = jwtToken.get_payload_claim(nameGrant).as_string();
-				}
-
-				auto& roleGrant = pConfiguration->GetRoleGrant();
-				if (!roleGrant.empty() && jwtToken.has_payload_claim(roleGrant))
-				{
-					auto claim = jwtToken.get_payload_claim(roleGrant);
-					if (claim.get_type() == jwt::json::type::array)
-					{
-						for (const auto& value : claim.as_array())
-						{
-							if (value.is<std::string>())
-							{
-								roles.insert(value.get<std::string>());
-							}
-						}
-					}
-					else
-					{
-						roles.insert(claim.as_string());
-					}
-				}
-
-				//Check for required roles
-				for (auto& role : pConfiguration->GetRequiredRoles())
-				{
-					if (roles.find(role) == roles.end())
-					{
-						return S_FALSE;
-					}
-				}
-
-				if (!userName.empty())
-				{
-					RETURN_IF_FAILED(hr, pHttpContext->GetResponse()->SetHeader("X-USERID", userName.data(), userName.size(), TRUE));
-				}
-
-				/*std::set<std::wstring> roles;
-				std::wstring userName;
-
-				auto& nameGrant = pConfiguration->GetNameGrant();
-				if (!nameGrant.empty() && jwtToken.has_payload_claim(nameGrant))
-				{
-					userName = std::to_wstring(jwtToken.get_payload_claim(nameGrant).as_string());
-				}
-
-				auto& roleGrant = pConfiguration->GetRoleGrant();
-				if (!roleGrant.empty() && jwtToken.has_payload_claim(roleGrant))
-				{
-					auto claim = jwtToken.get_payload_claim(roleGrant);
-					if (claim.get_type() == jwt::json::type::array)
-					{
-						for (const auto& value : claim.as_array())
-						{
-							roles.insert(std::to_wstring(value.get<std::string>()));
-						}
-					}
-					else
-					{
-						roles.insert(std::to_wstring(claim.as_string()));
-					}
-				}
-
-				/*if ((result = std::make_unique<JwtClaimsUser>(std::move(userName), std::move(roles))) == NULL)
-				{
-					return E_OUTOFMEMORY;
-				}*/
-
-				return S_OK;
+				return S_FALSE;
 			}
+
+			std::string userName;
+			GetJwtTokenUser(pConfiguration, jwtToken, userName);
+
+			std::insensitive_unordered_set<std::string> roles;
+			GetJwtTokenRoles(pConfiguration, jwtToken, roles);
+
+			if (!ValidateJwtTokenPolicies(pConfiguration, userName, roles))
+			{
+				return S_FALSE;
+			}
+
+			for (auto& entry : pConfiguration->GetGrantMappings())
+			{
+				if (jwtToken.has_payload_claim(entry.first))
+				{
+					auto grantValue = jwtToken.get_payload_claim(entry.first).as_string();
+					RETURN_IF_FAILED(hr, httpRequest->SetHeader(entry.second.Header.data(),
+						grantValue.data(), grantValue.size(), entry.second.Replace));
+				}
+			}
+
+			/*std::set<std::wstring> roles;
+			std::wstring userName;
+
+			auto& nameGrant = pConfiguration->GetNameGrant();
+			if (!nameGrant.empty() && jwtToken.has_payload_claim(nameGrant))
+			{
+				userName = std::to_wstring(jwtToken.get_payload_claim(nameGrant).as_string());
+			}
+
+			auto& roleGrant = pConfiguration->GetRoleGrant();
+			if (!roleGrant.empty() && jwtToken.has_payload_claim(roleGrant))
+			{
+				auto claim = jwtToken.get_payload_claim(roleGrant);
+				if (claim.get_type() == jwt::json::type::array)
+				{
+					for (const auto& value : claim.as_array())
+					{
+						roles.insert(std::to_wstring(value.get<std::string>()));
+					}
+				}
+				else
+				{
+					roles.insert(std::to_wstring(claim.as_string()));
+				}
+			}
+
+			/*if ((result = std::make_unique<JwtClaimsUser>(std::move(userName), std::move(roles))) == NULL)
+			{
+				return E_OUTOFMEMORY;
+			}*/
+
+			return S_OK;
 		}
 		catch (const std::exception& ex)
 		{

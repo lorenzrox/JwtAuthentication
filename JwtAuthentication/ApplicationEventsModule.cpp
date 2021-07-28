@@ -4,9 +4,7 @@
 
 
 ApplicationEntry::ApplicationEntry(_In_ IHttpApplication* pApplication) :
-	m_configuration(new JwtModuleConfiguration()),
-	m_physicalPath(pApplication->GetApplicationPhysicalPath()),
-	m_configurationPath(pApplication->GetAppConfigPath())
+	m_configuration(new JwtModuleConfiguration(pApplication->GetApplicationPhysicalPath(), pApplication->GetAppConfigPath()))
 {
 }
 
@@ -26,26 +24,7 @@ HRESULT ApplicationEntry::Initialize()
 		return E_OUTOFMEMORY;
 	}
 
-	return m_configuration->Reload(m_physicalPath, m_configurationPath);
-}
-
-HRESULT ApplicationEntry::ReloadConfiguration()
-{
-	return m_configuration->Reload(m_physicalPath, m_configurationPath);
-}
-
-bool ApplicationEntry::MatchesConfiguration(const std::wstring& configuration) const noexcept
-{
-	auto index = m_configurationPath.find(configuration);
-	if (index == 0)
-	{
-		// This checks the case where the config path was
-		// MACHINE/WEBROOT/site and your site path is MACHINE/WEBROOT/siteTest
-		return m_configurationPath.size() == configuration.size() ||
-			m_configurationPath[configuration.size()] == L'/';
-	}
-
-	return false;
+	return m_configuration->Reload();
 }
 
 
@@ -136,10 +115,11 @@ GLOBAL_NOTIFICATION_STATUS ApplicationEventsModule::OnGlobalConfigurationChange(
 		auto iterator = m_applications.begin();
 		while (iterator != m_applications.end())
 		{
-			if (iterator->second->MatchesConfiguration(pwszChangePath))
+			auto pConfiguration = iterator->second->GetConfiguration();
+			if (pConfiguration != NULL && pConfiguration->Applies(pwszChangePath))
 			{
 				HRESULT hr;
-				if (FAILED(hr = iterator->second->ReloadConfiguration()))
+				if (FAILED(hr = pConfiguration->Reload()))
 				{
 					//Error
 					pProvider->SetErrorStatus(hr);

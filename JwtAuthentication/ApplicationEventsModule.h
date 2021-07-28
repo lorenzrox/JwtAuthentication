@@ -11,27 +11,13 @@ public:
 	~ApplicationEntry();
 
 	HRESULT Initialize();
-	HRESULT ReloadConfiguration();
-	bool MatchesConfiguration(const std::wstring& configuration) const noexcept;
 
-	inline const JwtModuleConfiguration* GetConfiguration() const noexcept
+	inline JwtModuleConfiguration* GetConfiguration() const noexcept
 	{
 		return m_configuration;
 	}
 
-	inline const std::wstring& GetConfigurationPath() const noexcept
-	{
-		return m_configurationPath;
-	}
-
-	inline const std::wstring& GetPhysicalPath() const noexcept
-	{
-		return m_physicalPath;
-	}
-
 private:
-	std::wstring m_configurationPath;
-	std::wstring m_physicalPath;
 	JwtModuleConfiguration* m_configuration;
 };
 

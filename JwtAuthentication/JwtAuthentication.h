@@ -6,6 +6,8 @@
 #include <atlbase.h>
 #include <memory>
 #include <set>
+#include <unordered_map>
+#include <vector>
 
 #define RETURN_IF_FAILED(result, expr) if(FAILED(result = expr)) {\
 		return result; \

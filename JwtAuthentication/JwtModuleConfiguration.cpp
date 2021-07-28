@@ -1,6 +1,7 @@
 #include "JwtModuleConfiguration.h"
 #include <wrl\wrappers\corewrappers.h>
 #include <Shlwapi.h>
+#include <pathcch.h>
 
 struct Variant {
 public:
@@ -57,17 +58,73 @@ private:
 	VARIANT value;
 };
 
-HRESULT ReadKeyFile(const std::wstring& physicalPath, _In_ BSTR path, std::string& result)
+bool SubstringTrim(const std::string& value, size_t startIndex, size_t endIndex, std::string& result)
 {
-	if (!SysStringLen(path)) {
+	while (startIndex < endIndex)
+	{
+		if (std::isspace(value[endIndex]))
+		{
+			endIndex--;
+		}
+		else
+		{
+			result = value.substr(startIndex, endIndex - startIndex + 1);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void ParsePolicyDefinition(const std::string& value, std::insensitive_unordered_set<std::string>& values)
+{
+	size_t endIndex;
+	size_t startIndex = 0;
+	std::string token;
+
+	while ((endIndex = value.find(',', startIndex)) != std::string::npos)
+	{
+		if (SubstringTrim(value, startIndex, endIndex - 1, token))
+		{
+			values.emplace(std::move(value));
+		}
+
+		startIndex = endIndex + 1;
+	}
+
+	if (SubstringTrim(value, startIndex, value.size() - 1, token))
+	{
+		values.emplace(std::move(value));
+	}
+}
+
+HRESULT ReadKeyFile(IAppHostElement* pConfigurationElement, const std::wstring& phyiscalPath, std::string& result)
+{
+	if (phyiscalPath.size() >= MAX_PATH)
+	{
+		return E_INVALIDARG;
+	}
+
+	HRESULT hr;
+	CComPtr<IAppHostProperty> configurationProperty;
+	RETURN_IF_FAILED(hr, pConfigurationElement->GetPropertyByName(CComBSTR(L"keySource"), &configurationProperty));
+
+	if (configurationProperty == NULL)
+	{
 		return S_FALSE;
 	}
 
-	WCHAR keyFileName[MAX_PATH] = L"";
-	if (!PathCombineW(keyFileName, physicalPath.data(), path))
-	{
-		return HRESULT_FROM_WIN32(GetLastError());
+	Variant keySource;
+	RETURN_IF_FAILED(hr, configurationProperty->get_Value(&keySource));
+
+	if (!SysStringLen(keySource->bstrVal)) {
+		return S_FALSE;
 	}
+
+	WCHAR keyFileName[MAX_PATH];
+	CopyMemory(keyFileName, phyiscalPath.data(), (phyiscalPath.size() + 1) * sizeof(WCHAR));
+
+	RETURN_IF_FAILED(hr, PathCchCombine(keyFileName, MAX_PATH, keyFileName, keySource->bstrVal));
 
 	Microsoft::WRL::Wrappers::FileHandle keyFile(CreateFile(keyFileName, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL));
 	if (!keyFile.IsValid())
@@ -90,8 +147,182 @@ HRESULT ReadKeyFile(const std::wstring& physicalPath, _In_ BSTR path, std::strin
 	return S_OK;
 }
 
-JwtModuleConfiguration::JwtModuleConfiguration() :
-	m_refCount(1)
+template <typename _Ty>
+HRESULT ReadInt(IAppHostElement* pConfigurationElement, const CComBSTR& pKey, _Ty& result)
+{
+	HRESULT hr;
+	CComPtr<IAppHostProperty> configurationProperty;
+	RETURN_IF_FAILED(hr, pConfigurationElement->GetPropertyByName(pKey, &configurationProperty));
+
+	if (configurationProperty)
+	{
+		Variant value;
+		RETURN_IF_FAILED(hr, configurationProperty->get_Value(&value));
+
+		result = static_cast<_Ty>(value->intVal);
+		return S_OK;
+	}
+
+	return S_FALSE;
+}
+
+HRESULT ReadBoolean(IAppHostElement* pConfigurationElement, const CComBSTR& pKey, bool& result)
+{
+	HRESULT hr;
+	CComPtr<IAppHostProperty> configurationProperty;
+	RETURN_IF_FAILED(hr, pConfigurationElement->GetPropertyByName(pKey, &configurationProperty));
+
+	if (configurationProperty)
+	{
+		Variant value;
+		RETURN_IF_FAILED(hr, configurationProperty->get_Value(&value));
+
+		result = value->boolVal != FALSE;
+		return S_OK;
+	}
+
+	return S_FALSE;
+}
+
+HRESULT ReadString(IAppHostElement* pConfigurationElement, const CComBSTR& pKey, std::string& result)
+{
+	HRESULT hr;
+	CComPtr<IAppHostProperty> configurationProperty;
+	RETURN_IF_FAILED(hr, pConfigurationElement->GetPropertyByName(pKey, &configurationProperty));
+
+	if (configurationProperty)
+	{
+		Variant value;
+		RETURN_IF_FAILED(hr, configurationProperty->get_Value(&value));
+
+		UINT len = SysStringLen(value->bstrVal);
+		if (len) {
+			result = std::to_string(value->bstrVal, len);
+			return S_OK;
+		}
+	}
+
+	return S_FALSE;
+}
+
+HRESULT ReadPolicies(IAppHostElement* pConfigurationElement, std::vector<JwtAuthenticationPolicy>& policies)
+{
+	HRESULT hr;
+	CComPtr<IAppHostElement> policiesElement;
+	RETURN_IF_FAILED(hr, pConfigurationElement->GetElementByName(CComBSTR(L"policies"), &policiesElement));
+
+	if (policiesElement)
+	{
+		CComPtr<IAppHostElementCollection> policiesCollection;
+		RETURN_IF_FAILED(hr, policiesElement->get_Collection(&policiesCollection));
+
+		if (policiesCollection)
+		{
+			DWORD policyCount;
+			RETURN_IF_FAILED(hr, policiesCollection->get_Count(&policyCount));
+
+			VARIANT vtIndex;
+			vtIndex.vt = VT_INT;
+			vtIndex.intVal = 0;
+
+			JwtAuthenticationPolicy policy;
+			CComBSTR usersProperty = L"users";
+			CComBSTR rolesProperty = L"roles";
+			CComPtr<IAppHostElement> policyElement;
+
+			while (vtIndex.intVal < policyCount)
+			{
+				RETURN_IF_FAILED(hr, policiesCollection->get_Item(vtIndex, &policyElement));
+				vtIndex.intVal++;
+
+				std::string users;
+				RETURN_IF_FAILED(hr, ReadString(policyElement, usersProperty, users));
+
+				std::string roles;
+				RETURN_IF_FAILED(hr, ReadString(policyElement, rolesProperty, roles));
+
+				ParsePolicyDefinition(users, policy.Users);
+				ParsePolicyDefinition(roles, policy.Roles);
+
+				if (policy.Users.empty() && policy.Roles.empty())
+				{
+					continue;
+				}
+
+				policies.emplace_back(std::move(policy));
+			}
+
+			return S_OK;
+		}
+	}
+
+	return S_FALSE;
+}
+
+HRESULT ReadGrantHeaderMappings(IAppHostElement* pConfigurationElement, std::insensitive_unordered_map<std::string, const JwtGrantMapping>& mappings)
+{
+	HRESULT hr;
+	CComPtr<IAppHostElement> grantMappingsElement;
+	RETURN_IF_FAILED(hr, pConfigurationElement->GetElementByName(CComBSTR(L"grantHeaderMappings"), &grantMappingsElement));
+
+	if (grantMappingsElement)
+	{
+		CComPtr<IAppHostElementCollection> grantMappingsCollection;
+		RETURN_IF_FAILED(hr, grantMappingsElement->get_Collection(&grantMappingsCollection));
+
+		if (grantMappingsCollection)
+		{
+			DWORD grantMappingCount;
+			RETURN_IF_FAILED(hr, grantMappingsCollection->get_Count(&grantMappingCount));
+
+			VARIANT vtIndex;
+			vtIndex.vt = VT_INT;
+			vtIndex.intVal = 0;
+
+			CComBSTR grantProperty = L"grant";
+			CComBSTR headerProperty = L"header";
+			CComBSTR replaceProperty = L"replace";
+			CComPtr<IAppHostElement> mappingElement;
+
+			while (vtIndex.intVal < grantMappingCount)
+			{
+				RETURN_IF_FAILED(hr, grantMappingsCollection->get_Item(vtIndex, &mappingElement));
+				vtIndex.intVal++;
+
+				std::string grant;
+				RETURN_IF_FAILED(hr, ReadString(mappingElement, grantProperty, grant));
+
+				if (grant.empty())
+				{
+					continue;
+				}
+
+				std::string header;
+				RETURN_IF_FAILED(hr, ReadString(mappingElement, headerProperty, header));
+
+				if (header.empty())
+				{
+					continue;
+				}
+
+				bool replace = false;
+				RETURN_IF_FAILED(hr, ReadBoolean(mappingElement, replaceProperty, replace));
+
+				mappings.emplace(std::move(grant), JwtGrantMapping({ std::move(header), replace }));
+			}
+
+			return S_OK;
+		}
+	}
+
+	return S_FALSE;
+}
+
+
+JwtModuleConfiguration::JwtModuleConfiguration(std::wstring&& phyiscalPath, std::wstring&& configurationPath) :
+	m_refCount(1),
+	m_phyiscalPath(phyiscalPath),
+	m_configurationPath(configurationPath)
 {
 }
 
@@ -108,15 +339,26 @@ void JwtModuleConfiguration::DereferenceConfiguration() noexcept
 	}
 }
 
-HRESULT JwtModuleConfiguration::Reload(const std::wstring& physicalPath, const std::wstring& configurationPath)
+bool JwtModuleConfiguration::Applies(const std::wstring& configuration) const noexcept
 {
+	auto index = m_configurationPath.find(configuration);
+	if (index == 0)
+	{
+		// This checks the case where the config path was
+		// MACHINE/WEBROOT/site and your site path is MACHINE/WEBROOT/siteTest
+		return m_configurationPath.size() == configuration.size() ||
+			m_configurationPath[configuration.size()] == L'/';
+	}
 
+	return false;
+}
+
+HRESULT JwtModuleConfiguration::Reload()
+{
 	HRESULT hr;
 	CComPtr<IAppHostElement> configurationElement;
-	CComPtr<IAppHostProperty> configurationProperty;
-
 	RETURN_IF_FAILED(hr, g_pHttpServer->GetAdminManager()->GetAdminSection(CComBSTR(L"system.webServer/security/authentication/jwtAuthentication"),
-		CComBSTR(configurationPath.size(), configurationPath.data()), &configurationElement));
+		CComBSTR(m_configurationPath.size(), m_configurationPath.data()), &configurationElement));
 
 	m_enabled = false;
 	m_validationType = JwtValidationType::Header;
@@ -125,149 +367,29 @@ HRESULT JwtModuleConfiguration::Reload(const std::wstring& physicalPath, const s
 	m_nameGrant.clear();
 	m_roleGrant.clear();
 	m_key.clear();
-	m_requiredRoles.clear();
+	m_policies.clear();
+	m_grantMappings.clear();
 
-	RETURN_IF_FAILED(hr, configurationElement->GetPropertyByName(CComBSTR(L"enabled"), &configurationProperty));
-	if (configurationProperty)
-	{
-		Variant enabled;
-		RETURN_IF_FAILED(hr, configurationProperty->get_Value(&enabled));
-
-		m_enabled = enabled->boolVal != FALSE;
-	}
-
-	RETURN_IF_FAILED(hr, configurationElement->GetPropertyByName(CComBSTR(L"validationType"), &configurationProperty));
-
-	if (configurationProperty)
-	{
-		Variant validationType;
-		RETURN_IF_FAILED(hr, configurationProperty->get_Value(&validationType));
-
-		m_validationType = static_cast<JwtValidationType>(validationType->intVal);
-	}
-
-	RETURN_IF_FAILED(hr, configurationElement->GetPropertyByName(CComBSTR(L"path"), &configurationProperty));
-
-	if (configurationProperty)
-	{
-		Variant path;
-		RETURN_IF_FAILED(hr, configurationProperty->get_Value(&path));
-
-		UINT len = SysStringLen(path->bstrVal);
-		if (len) {
-			m_path = std::to_string(path->bstrVal, len);
-		}
-	}
-
-	RETURN_IF_FAILED(hr, configurationElement->GetPropertyByName(CComBSTR(L"algorithm"), &configurationProperty));
-
-	if (configurationProperty)
-	{
-		Variant algorithm;
-		RETURN_IF_FAILED(hr, configurationProperty->get_Value(&algorithm));
-
-		m_algorithm = static_cast<JwtCryptoAlgorithm>(algorithm->intVal);
-
-		RETURN_IF_FAILED(hr, VariantClear(&algorithm));
-	}
-
-	RETURN_IF_FAILED(hr, configurationElement->GetPropertyByName(CComBSTR(L"nameGrant"), &configurationProperty));
-
-	if (configurationProperty)
-	{
-		Variant nameGrant;
-		RETURN_IF_FAILED(hr, configurationProperty->get_Value(&nameGrant));
-
-		UINT len = SysStringLen(nameGrant->bstrVal);
-		if (len) {
-			m_nameGrant = std::to_string(nameGrant->bstrVal, len);
-		}
-	}
-
-	RETURN_IF_FAILED(hr, configurationElement->GetPropertyByName(CComBSTR(L"roleGrant"), &configurationProperty));
-
-	if (configurationProperty)
-	{
-		Variant roleGrant;
-		RETURN_IF_FAILED(hr, configurationProperty->get_Value(&roleGrant));
-
-		UINT len = SysStringLen(roleGrant->bstrVal);
-		if (len) {
-			m_roleGrant = std::to_string(roleGrant->bstrVal, len);
-		}
-	}
-
-	CComPtr<IAppHostElement> requiredRolesElement;
-	RETURN_IF_FAILED(hr, configurationElement->GetElementByName(CComBSTR(L"requiredRoles"), &requiredRolesElement));
-
-	if (requiredRolesElement)
-	{
-		CComPtr<IAppHostElementCollection> requiredRolesCollection;
-		RETURN_IF_FAILED(hr, requiredRolesElement->get_Collection(&requiredRolesCollection));
-
-		if (requiredRolesCollection)
-		{
-			DWORD requiredRolesCount;
-			RETURN_IF_FAILED(hr, requiredRolesCollection->get_Count(&requiredRolesCount));
-
-			VARIANT vtIndex;
-			vtIndex.vt = VT_INT;
-			vtIndex.intVal = 0;
-
-			Variant requiredRole;
-			CComBSTR propertyName = L"name";
-			CComPtr<IAppHostElement> requiredRoleElement;
-
-			while (vtIndex.intVal < requiredRolesCount)
-			{
-				RETURN_IF_FAILED(hr, requiredRolesCollection->get_Item(vtIndex, &requiredRoleElement));
-				RETURN_IF_FAILED(hr, requiredRoleElement->GetPropertyByName(propertyName, &configurationProperty));
-
-				if (configurationProperty)
-				{
-					RETURN_IF_FAILED(hr, configurationProperty->get_Value(&requiredRole));
-
-					UINT len = SysStringLen(requiredRole->bstrVal);
-					if (len) {
-						m_requiredRoles.insert(std::to_string(requiredRole->bstrVal, len));
-					}
-				}
-
-				vtIndex.intVal++;
-			}
-		}
-	}
+	RETURN_IF_FAILED(hr, ReadBoolean(configurationElement, L"enabled", m_enabled));
+	RETURN_IF_FAILED(hr, ReadInt(configurationElement, L"validationType", m_validationType));
+	RETURN_IF_FAILED(hr, ReadString(configurationElement, L"path", m_path));
+	RETURN_IF_FAILED(hr, ReadInt(configurationElement, L"algorithm", m_algorithm));
+	RETURN_IF_FAILED(hr, ReadString(configurationElement, L"nameGrant", m_nameGrant));
+	RETURN_IF_FAILED(hr, ReadString(configurationElement, L"roleGrant", m_roleGrant));
+	RETURN_IF_FAILED(hr, ReadPolicies(configurationElement, m_policies));
+	RETURN_IF_FAILED(hr, ReadGrantHeaderMappings(configurationElement, m_grantMappings));
 
 	if (m_algorithm == JwtCryptoAlgorithm::RS256)
 	{
-		RETURN_IF_FAILED(hr, configurationElement->GetPropertyByName(CComBSTR(L"keySource"), &configurationProperty));
+		RETURN_IF_FAILED(hr, ReadKeyFile(configurationElement, m_phyiscalPath, m_key));
 
-		if (configurationProperty)
+		if (hr == S_OK)
 		{
-			Variant keySource;
-			RETURN_IF_FAILED(hr, configurationProperty->get_Value(&keySource));
-
-			RETURN_IF_FAILED(hr, ReadKeyFile(physicalPath, keySource->bstrVal, m_key));
-			if (hr == S_OK)
-			{
-				return S_OK;
-			}
+			return S_OK;
 		}
 	}
 
-	RETURN_IF_FAILED(hr, configurationElement->GetPropertyByName(CComBSTR(L"key"), &configurationProperty));
-
-	if (configurationProperty)
-	{
-		Variant key;
-		RETURN_IF_FAILED(hr, configurationProperty->get_Value(&key));
-
-		UINT len = SysStringLen(key->bstrVal);
-		if (len)
-		{
-			m_key = std::to_string(key->bstrVal, len);
-		}
-	}
+	RETURN_IF_FAILED(hr, ReadString(configurationElement, L"key", m_key));
 
 	return S_OK;
 }
@@ -292,14 +414,14 @@ HRESULT JwtModuleConfiguration::EnsureConfiguration(_In_ IHttpApplication* pAppl
 	auto contextContainer = pApplication->GetModuleContextContainer();
 	if ((*ppConfiguration = reinterpret_cast<JwtModuleConfiguration*>(contextContainer->GetModuleContext(g_pModuleId))) == NULL)
 	{
-		auto configuration = std::make_unique<JwtModuleConfiguration>();
+		auto configuration = std::make_unique<JwtModuleConfiguration>(pApplication->GetApplicationPhysicalPath(), pApplication->GetAppConfigPath());
 		if (configuration == NULL)
 		{
 			return E_OUTOFMEMORY;
 		}
 
 		HRESULT hr;
-		RETURN_IF_FAILED(hr, configuration->Reload(pApplication->GetApplicationPhysicalPath(), pApplication->GetAppConfigPath()));
+		RETURN_IF_FAILED(hr, configuration->Reload());
 		RETURN_IF_FAILED(hr, contextContainer->SetModuleContext(configuration.get(), g_pModuleId));
 
 		*ppConfiguration = configuration.release();

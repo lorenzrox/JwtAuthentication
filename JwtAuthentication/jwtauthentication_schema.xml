@@ -26,9 +26,17 @@
     <attribute name="keySource" type="string" />
     <attribute name="nameGrant" type="string" defaultValue="sub" />
     <attribute name="roleGrant" type="string" defaultValue="role" />
-    <element name="requiredRoles">
-      <collection addElement="role" clearElement="clear">
-        <attribute name="name" type="string" required="true" validationType="nonEmptyString" />
+    <element name="policies">
+      <collection addElement="add" clearElement="clear">
+        <attribute name="users" type="string" />
+        <attribute name="roles" type="string" />
+      </collection>
+    </element>
+    <element name="grantHeaderMappings">
+      <collection addElement="add" clearElement="clear">
+        <attribute name="grant" type="string" required="true" validationType="nonEmptyString" />
+        <attribute name="header" type="string" required="true" validationType="nonEmptyString" />
+        <attribute name="replace" type="bool" defaultValue="false" />
       </collection>
     </element>
   </sectionSchema>

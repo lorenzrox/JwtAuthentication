@@ -1,6 +1,10 @@
 #pragma once
 #include <string>
+#include <unordered_set>
+#include <unordered_map>
 #include <Windows.h>
+#include <cwctype>
+#include <cctype>
 
 namespace std
 {
@@ -62,27 +66,74 @@ namespace std
 		return wsdata;
 	}
 
-	template<class _Ty>
-	struct insensitive_compare : public binary_function<string, string, bool>
+	template<typename _Ty>
+	struct insensitive_equal_to
 	{
 		bool operator()(const _Ty& left, const _Ty& right) const {
 			return false;
 		}
 	};
 
-	template<>
-	struct insensitive_compare<string>
+	template<typename _Ty>
+	struct insensitive_hash
 	{
-		bool operator()(const string& left, const string& right) const {
-			return _strcmpi(left.c_str(), right.c_str()) < 0;
+		size_t operator()(const _Ty& value) const
+		{
+			return 0;
 		}
 	};
 
 	template<>
-	struct insensitive_compare<wstring>
+	struct insensitive_equal_to<string>
 	{
-		bool operator()(const wstring& left, const wstring& right) const {
-			return _wcsicmp(left.c_str(), right.c_str()) < 0;
+		bool operator()(const string& left, const string& right) const {
+			return _strcmpi(left.c_str(), right.c_str()) == 0;
 		}
 	};
+
+	template<>
+	struct insensitive_hash<string>
+	{
+		size_t operator()(const string& value) const
+		{
+			unsigned int hash = 1315423911;
+
+			for (std::size_t i = 0; i < value.length(); i++)
+			{
+				hash ^= ((hash << 5) + std::toupper(value[i]) + (hash >> 2));
+			}
+
+			return (hash & 0x7FFFFFFF);
+		}
+	};
+
+	template<>
+	struct insensitive_equal_to<wstring>
+	{
+		bool operator()(const wstring& left, const wstring& right) const {
+			return _wcsicmp(left.c_str(), right.c_str()) == 0;
+		}
+	};
+
+	template<>
+	struct insensitive_hash<wstring>
+	{
+		size_t operator()(const wstring& value) const
+		{
+			unsigned int hash = 1315423911;
+
+			for (std::size_t i = 0; i < value.length(); i++)
+			{
+				hash ^= ((hash << 5) + std::towupper(value[i]) + (hash >> 2));
+			}
+
+			return (hash & 0x7FFFFFFF);
+		}
+	};
+
+	template<class _Ty>
+	using insensitive_unordered_set = unordered_set<_Ty, insensitive_hash<_Ty>, insensitive_equal_to<_Ty>>;
+
+	template<class _Kty, typename _Ty>
+	using insensitive_unordered_map = unordered_map<_Kty, _Ty, insensitive_hash<_Kty>, insensitive_equal_to<_Kty>>;
 }
