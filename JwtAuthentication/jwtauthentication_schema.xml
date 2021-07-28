@@ -36,7 +36,7 @@
       <collection addElement="add" clearElement="clear">
         <attribute name="grant" type="string" required="true" validationType="nonEmptyString" />
         <attribute name="header" type="string" required="true" validationType="nonEmptyString" />
-        <attribute name="replace" type="bool" defaultValue="false" />
+        <attribute name="replace" type="bool" defaultValue="true" />
       </collection>
     </element>
   </sectionSchema>

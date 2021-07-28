@@ -305,7 +305,7 @@ HRESULT ReadGrantHeaderMappings(IAppHostElement* pConfigurationElement, std::ins
 					continue;
 				}
 
-				bool replace = false;
+				bool replace = true;
 				RETURN_IF_FAILED(hr, ReadBoolean(mappingElement, replaceProperty, replace));
 
 				mappings.emplace(std::move(grant), JwtGrantMapping({ std::move(header), replace }));
