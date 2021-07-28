@@ -82,6 +82,11 @@ void ParsePolicyDefinition(const std::string& value, std::insensitive_unordered_
 	size_t startIndex = 0;
 	std::string token;
 
+	if (value.empty())
+	{
+		return;
+	}
+
 	while ((endIndex = value.find(',', startIndex)) != std::string::npos)
 	{
 		if (SubstringTrim(value, startIndex, endIndex - 1, token))
