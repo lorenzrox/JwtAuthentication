@@ -473,17 +473,6 @@ namespace jwt {
 						return {};
 					}
 
-					/*auto pRSAPkey = reinterpret_cast<const RSAPUBKEY*>(keyBlob.data() + sizeof(PUBLICKEYSTRUC));
-					auto pModulus = reinterpret_cast<BYTE*>(&keyBlob[0] + sizeof(PUBLICKEYSTRUC) + sizeof(RSAPUBKEY));
-
-					PBYTE last = pModulus + pRSAPkey->bitlen / 8 - 1;
-					for (size_t i = 0; i < pRSAPkey->bitlen / 16; i++)
-					{
-						BYTE value = *last;
-						*last = pModulus[i];
-						pModulus[i] = value;
-					}*/
-
 					return keyBlob;
 				}
 			}
@@ -835,7 +824,6 @@ namespace jwt {
 
 					if (!CryptVerifySignature(hash.get(), reinterpret_cast<const BYTE*>(signature.data()),
 						signature.size(), key.get(), NULL, 0)) {
-						auto err = GetLastError();
 						ec = error::signature_verification_error::verifyfinal_failed;
 						return;
 					}

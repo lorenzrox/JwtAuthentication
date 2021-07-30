@@ -339,12 +339,12 @@ bool JwtAuthenticationModule::ValidateJwtTokenSignature(JwtModuleConfiguration* 
 		}
 	}
 
+	auto& key = pConfiguration->GetKey();
 	if (!jwtToken.has_algorithm())
 	{
-		return true;
+		return key.empty();
 	}
 
-	auto& key = pConfiguration->GetKey();
 	if (key.empty())
 	{
 		return true;
