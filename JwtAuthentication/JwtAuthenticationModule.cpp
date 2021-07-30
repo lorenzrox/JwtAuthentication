@@ -445,7 +445,7 @@ HRESULT JwtAuthenticationModule::CreateUser(_In_ IHttpContext* pHttpContext, _Ou
 	}
 
 	IHttpRequest* httpRequest = pHttpContext->GetRequest();
-	if (_strnicmp("OPTIONS", httpRequest->GetHttpMethod(), 7) == 0)
+	if (_stricmp("OPTIONS", httpRequest->GetHttpMethod(), 8) == 0)
 	{
 		WriteEventLog(EventLogType::Information, "Skipped authentication for OPTIONS request");
 		return S_OK;
