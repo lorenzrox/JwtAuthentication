@@ -1,62 +1,8 @@
 #include "JwtModuleConfiguration.h"
+#include "Variant.h"
 #include <wrl\wrappers\corewrappers.h>
 #include <Shlwapi.h>
 #include <pathcch.h>
-
-struct Variant {
-public:
-	Variant() {
-		VariantInit(&value);
-	}
-
-	~Variant() {
-		VariantClear(&value);
-	}
-
-	Variant(Variant&& other) noexcept
-		: value(other.value) {
-		VariantInit(&other.value);
-	}
-
-	Variant(const Variant& other) {
-		VariantCopy(&value, &other.value);
-	}
-
-	Variant& operator=(Variant&& other) noexcept {
-		VariantClear(&value);
-
-		value = other.value;
-
-		VariantInit(&other.value);
-		return *this;
-	}
-
-	Variant& operator=(const Variant& other) {
-		VariantClear(&value);
-		VariantCopy(&value, &other.value);
-		return *this;
-	}
-
-	inline operator VARIANT& () noexcept {
-		return value;
-	}
-
-	inline VARIANT* operator&() noexcept {
-		VariantClear(&value);
-		return &value;
-	}
-
-	inline const VARIANT& get() const noexcept {
-		return value;
-	}
-
-	inline const VARIANT* operator->() const noexcept {
-		return &value;
-	}
-
-private:
-	VARIANT value;
-};
 
 bool SubstringTrim(const std::string& value, size_t startIndex, size_t endIndex, std::string& result)
 {
@@ -76,7 +22,8 @@ bool SubstringTrim(const std::string& value, size_t startIndex, size_t endIndex,
 	return false;
 }
 
-void ParsePolicyDefinition(const std::string& value, std::insensitive_unordered_set<std::string>& values)
+template<class _Hasher, class _Keyeq>
+void ParsePolicyDefinition(const std::string& value, std::unordered_set<std::string, _Hasher, _Keyeq>& values)
 {
 	size_t endIndex;
 	size_t startIndex = 0;
@@ -112,7 +59,15 @@ HRESULT ReadKeyFile(IAppHostElement* pConfigurationElement, const std::wstring& 
 
 	HRESULT hr;
 	CComPtr<IAppHostProperty> configurationProperty;
-	RETURN_IF_FAILED(hr, pConfigurationElement->GetPropertyByName(CComBSTR(L"keySource"), &configurationProperty));
+	if (FAILED(hr = pConfigurationElement->GetPropertyByName(CComBSTR(L"keySource"), &configurationProperty)))
+	{
+		if (hr == HRESULT_FROM_WIN32(ERROR_INVALID_INDEX))
+		{
+			return S_FALSE;
+		}
+
+		return hr;
+	}
 
 	if (configurationProperty == NULL)
 	{
@@ -122,7 +77,8 @@ HRESULT ReadKeyFile(IAppHostElement* pConfigurationElement, const std::wstring& 
 	Variant keySource;
 	RETURN_IF_FAILED(hr, configurationProperty->get_Value(&keySource));
 
-	if (!SysStringLen(keySource->bstrVal)) {
+	if (!SysStringLen(keySource->bstrVal))
+	{
 		return S_FALSE;
 	}
 
@@ -157,7 +113,15 @@ HRESULT ReadInt(IAppHostElement* pConfigurationElement, const CComBSTR& pKey, _T
 {
 	HRESULT hr;
 	CComPtr<IAppHostProperty> configurationProperty;
-	RETURN_IF_FAILED(hr, pConfigurationElement->GetPropertyByName(pKey, &configurationProperty));
+	if (FAILED(hr = pConfigurationElement->GetPropertyByName(pKey, &configurationProperty)))
+	{
+		if (hr == HRESULT_FROM_WIN32(ERROR_INVALID_INDEX))
+		{
+			return S_FALSE;
+		}
+
+		return hr;
+	}
 
 	if (configurationProperty)
 	{
@@ -175,7 +139,15 @@ HRESULT ReadBoolean(IAppHostElement* pConfigurationElement, const CComBSTR& pKey
 {
 	HRESULT hr;
 	CComPtr<IAppHostProperty> configurationProperty;
-	RETURN_IF_FAILED(hr, pConfigurationElement->GetPropertyByName(pKey, &configurationProperty));
+	if (FAILED(hr = pConfigurationElement->GetPropertyByName(pKey, &configurationProperty)))
+	{
+		if (hr == HRESULT_FROM_WIN32(ERROR_INVALID_INDEX))
+		{
+			return S_FALSE;
+		}
+
+		return hr;
+	}
 
 	if (configurationProperty)
 	{
@@ -193,7 +165,15 @@ HRESULT ReadString(IAppHostElement* pConfigurationElement, const CComBSTR& pKey,
 {
 	HRESULT hr;
 	CComPtr<IAppHostProperty> configurationProperty;
-	RETURN_IF_FAILED(hr, pConfigurationElement->GetPropertyByName(pKey, &configurationProperty));
+	if (FAILED(hr = pConfigurationElement->GetPropertyByName(pKey, &configurationProperty)))
+	{
+		if (hr == HRESULT_FROM_WIN32(ERROR_INVALID_INDEX))
+		{
+			return S_FALSE;
+		}
+
+		return hr;
+	}
 
 	if (configurationProperty)
 	{
@@ -210,11 +190,75 @@ HRESULT ReadString(IAppHostElement* pConfigurationElement, const CComBSTR& pKey,
 	return S_FALSE;
 }
 
+HRESULT ReadPolicies(IAppHostElementCollection* pPoliciesCollection, std::vector<JwtAuthenticationPolicy>& policies)
+{
+	HRESULT hr;
+	DWORD policyCount;
+	RETURN_IF_FAILED(hr, pPoliciesCollection->get_Count(&policyCount));
+
+	JwtAuthenticationPolicy policy;
+
+	VARIANT vtIndex = { VT_INT , 0 };
+	CComBSTR accessTypeProperty = L"accessType";
+	CComBSTR usersProperty = L"users";
+	CComBSTR rolesProperty = L"roles";
+	CComBSTR verbsProperty = L"verbs";
+	CComPtr<IAppHostElement> policyElement;
+
+	while (vtIndex.intVal < policyCount)
+	{
+		RETURN_IF_FAILED(hr, pPoliciesCollection->get_Item(vtIndex, &policyElement));
+		vtIndex.intVal++;
+
+		JwtAuthenticationAccessType accessType = JwtAuthenticationAccessType::Allow;
+		RETURN_IF_FAILED(hr, ReadInt(policyElement, accessTypeProperty, accessType));
+
+		std::string users;
+		RETURN_IF_FAILED(hr, ReadString(policyElement, usersProperty, users));
+
+		std::string roles;
+		RETURN_IF_FAILED(hr, ReadString(policyElement, rolesProperty, roles));
+
+		std::string verbs;
+		RETURN_IF_FAILED(hr, ReadString(policyElement, verbsProperty, verbs));
+
+		ParsePolicyDefinition(users, policy.Users);
+		ParsePolicyDefinition(roles, policy.Roles);
+		ParsePolicyDefinition(verbs, policy.Verbs);
+
+		if (policy.Users.empty() && policy.Roles.empty() && policy.Verbs.empty())
+		{
+			continue;
+		}
+
+		if (accessType == JwtAuthenticationAccessType::Deny)
+		{
+			//TODO:
+		}
+		else
+		{
+			//TODO:
+		}
+
+		policies.emplace_back(std::move(policy));
+	}
+
+	return S_OK;
+}
+
 HRESULT ReadPolicies(IAppHostElement* pConfigurationElement, std::vector<JwtAuthenticationPolicy>& policies)
 {
 	HRESULT hr;
 	CComPtr<IAppHostElement> policiesElement;
-	RETURN_IF_FAILED(hr, pConfigurationElement->GetElementByName(CComBSTR(L"policies"), &policiesElement));
+	if (FAILED(hr = pConfigurationElement->GetElementByName(CComBSTR(L"policies"), &policiesElement)))
+	{
+		if (hr == HRESULT_FROM_WIN32(ERROR_INVALID_INDEX))
+		{
+			return S_FALSE;
+		}
+
+		return hr;
+	}
 
 	if (policiesElement)
 	{
@@ -223,41 +267,27 @@ HRESULT ReadPolicies(IAppHostElement* pConfigurationElement, std::vector<JwtAuth
 
 		if (policiesCollection)
 		{
-			DWORD policyCount;
-			RETURN_IF_FAILED(hr, policiesCollection->get_Count(&policyCount));
+			RETURN_IF_FAILED(hr, ReadPolicies(policiesCollection, policies));
+		}
+	}
 
-			VARIANT vtIndex;
-			vtIndex.vt = VT_INT;
-			vtIndex.intVal = 0;
+	return S_FALSE;
+}
 
-			JwtAuthenticationPolicy policy;
-			CComBSTR usersProperty = L"users";
-			CComBSTR rolesProperty = L"roles";
-			CComPtr<IAppHostElement> policyElement;
+HRESULT ReadPolicies(IAppHostAdminManager* pAdminManager, const CComBSTR& configurationPath, std::vector<JwtAuthenticationPolicy>& policies)
+{
+	HRESULT hr;
+	CComPtr<IAppHostElement> authorizationConfigurationElement;
+	RETURN_IF_FAILED(hr, pAdminManager->GetAdminSection(CComBSTR(L"system.webServer/security/authorization"), configurationPath, &authorizationConfigurationElement));
 
-			while (vtIndex.intVal < policyCount)
-			{
-				RETURN_IF_FAILED(hr, policiesCollection->get_Item(vtIndex, &policyElement));
-				vtIndex.intVal++;
+	if (authorizationConfigurationElement)
+	{
+		CComPtr<IAppHostElementCollection> policiesCollection;
+		RETURN_IF_FAILED(hr, authorizationConfigurationElement->get_Collection(&policiesCollection));
 
-				std::string users;
-				RETURN_IF_FAILED(hr, ReadString(policyElement, usersProperty, users));
-
-				std::string roles;
-				RETURN_IF_FAILED(hr, ReadString(policyElement, rolesProperty, roles));
-
-				ParsePolicyDefinition(users, policy.Users);
-				ParsePolicyDefinition(roles, policy.Roles);
-
-				if (policy.Users.empty() && policy.Roles.empty())
-				{
-					continue;
-				}
-
-				policies.emplace_back(std::move(policy));
-			}
-
-			return S_OK;
+		if (policiesCollection)
+		{
+			RETURN_IF_FAILED(hr, ReadPolicies(policiesCollection, policies));
 		}
 	}
 
@@ -268,7 +298,15 @@ HRESULT ReadGrantHeaderMappings(IAppHostElement* pConfigurationElement, std::ins
 {
 	HRESULT hr;
 	CComPtr<IAppHostElement> grantMappingsElement;
-	RETURN_IF_FAILED(hr, pConfigurationElement->GetElementByName(CComBSTR(L"grantHeaderMappings"), &grantMappingsElement));
+	if (FAILED(hr = pConfigurationElement->GetElementByName(CComBSTR(L"grantHeaderMappings"), &grantMappingsElement)))
+	{
+		if (hr == HRESULT_FROM_WIN32(ERROR_INVALID_INDEX))
+		{
+			return S_FALSE;
+		}
+
+		return hr;
+	}
 
 	if (grantMappingsElement)
 	{
@@ -280,10 +318,7 @@ HRESULT ReadGrantHeaderMappings(IAppHostElement* pConfigurationElement, std::ins
 			DWORD grantMappingCount;
 			RETURN_IF_FAILED(hr, grantMappingsCollection->get_Count(&grantMappingCount));
 
-			VARIANT vtIndex;
-			vtIndex.vt = VT_INT;
-			vtIndex.intVal = 0;
-
+			VARIANT vtIndex = { VT_INT , 0 };
 			CComBSTR grantProperty = L"grant";
 			CComBSTR headerProperty = L"header";
 			CComBSTR replaceProperty = L"replace";
@@ -324,6 +359,68 @@ HRESULT ReadGrantHeaderMappings(IAppHostElement* pConfigurationElement, std::ins
 }
 
 
+JwtAuthorizationPolicy::JwtAuthorizationPolicy(
+	std::insensitive_unordered_set<std::wstring>&& users,
+	std::insensitive_unordered_set<std::wstring>&& roles,
+	std::unordered_set<std::string>&& verbs) :
+	m_users(users),
+	m_roles(roles),
+	m_verbs(verbs)
+{
+}
+
+HRESULT JwtAuthorizationAllowPolicy::Check(_In_ IHttpContext* pContext, _Out_ bool* pResult)
+{
+	auto& verbs = GetVerbs();
+	if (verbs.find(pContext->GetRequest()->GetHttpMethod()) == verbs.end())
+	{
+		return S_FALSE;
+	}
+
+	auto user = pContext->GetUser();
+	if (user == NULL)
+	{
+		*pResult = false;
+		return S_OK;
+	}
+
+	auto& users = GetUsers();
+	if (!users.empty())
+	{
+		auto userName = user->GetUserName();
+		if (users.find(userName) == users.end())
+		{
+			*pResult = false;
+			return S_OK;
+		}
+	}
+
+	auto& roles = GetRoles();
+	if (!user->SupportsIsInRole())
+	{
+		*pResult = roles.empty();
+		return S_OK;
+	}
+
+	HRESULT hr;
+	BOOL isInRole;
+	for (auto& role : GetRoles())
+	{
+		RETURN_IF_FAILED(hr, user->IsInRole(role.data(), &isInRole));
+
+		if (isInRole == FALSE)
+		{
+			*pResult = false;
+			return S_OK;
+		}
+	}
+
+	*pResult = true;
+	return S_OK;
+
+}
+
+
 JwtModuleConfiguration::JwtModuleConfiguration(std::wstring&& phyiscalPath, std::wstring&& configurationPath) :
 	m_refCount(1),
 	m_phyiscalPath(phyiscalPath),
@@ -360,10 +457,12 @@ bool JwtModuleConfiguration::Applies(const std::wstring& configuration) const no
 
 HRESULT JwtModuleConfiguration::Reload()
 {
+	auto adminManager = g_pHttpServer->GetAdminManager();
+	auto configurationPath = CComBSTR(m_configurationPath.size(), m_configurationPath.data());
+
 	HRESULT hr;
-	CComPtr<IAppHostElement> configurationElement;
-	RETURN_IF_FAILED(hr, g_pHttpServer->GetAdminManager()->GetAdminSection(CComBSTR(L"system.webServer/security/authentication/jwtAuthentication"),
-		CComBSTR(m_configurationPath.size(), m_configurationPath.data()), &configurationElement));
+	CComPtr<IAppHostElement> jwtConfigurationElement;
+	RETURN_IF_FAILED(hr, adminManager->GetAdminSection(CComBSTR(L"system.webServer/security/authentication/jwtAuthentication"), configurationPath, &jwtConfigurationElement));
 
 	m_enabled = false;
 	m_validationType = JwtValidationType::Header;
@@ -375,18 +474,18 @@ HRESULT JwtModuleConfiguration::Reload()
 	m_policies.clear();
 	m_grantMappings.clear();
 
-	RETURN_IF_FAILED(hr, ReadBoolean(configurationElement, L"enabled", m_enabled));
-	RETURN_IF_FAILED(hr, ReadInt(configurationElement, L"validationType", m_validationType));
-	RETURN_IF_FAILED(hr, ReadString(configurationElement, L"path", m_path));
-	RETURN_IF_FAILED(hr, ReadInt(configurationElement, L"algorithm", m_algorithm));
-	RETURN_IF_FAILED(hr, ReadString(configurationElement, L"nameGrant", m_nameGrant));
-	RETURN_IF_FAILED(hr, ReadString(configurationElement, L"roleGrant", m_roleGrant));
-	RETURN_IF_FAILED(hr, ReadPolicies(configurationElement, m_policies));
-	RETURN_IF_FAILED(hr, ReadGrantHeaderMappings(configurationElement, m_grantMappings));
+	RETURN_IF_FAILED(hr, ReadBoolean(jwtConfigurationElement, L"enabled", m_enabled));
+	RETURN_IF_FAILED(hr, ReadInt(jwtConfigurationElement, L"validationType", m_validationType));
+	RETURN_IF_FAILED(hr, ReadString(jwtConfigurationElement, L"path", m_path));
+	RETURN_IF_FAILED(hr, ReadInt(jwtConfigurationElement, L"algorithm", m_algorithm));
+	RETURN_IF_FAILED(hr, ReadString(jwtConfigurationElement, L"nameGrant", m_nameGrant));
+	RETURN_IF_FAILED(hr, ReadString(jwtConfigurationElement, L"roleGrant", m_roleGrant));
+	RETURN_IF_FAILED(hr, ReadPolicies(jwtConfigurationElement, m_policies));
+	RETURN_IF_FAILED(hr, ReadGrantHeaderMappings(jwtConfigurationElement, m_grantMappings));
 
 	if (m_algorithm == JwtCryptoAlgorithm::RS256)
 	{
-		RETURN_IF_FAILED(hr, ReadKeyFile(configurationElement, m_phyiscalPath, m_key));
+		RETURN_IF_FAILED(hr, ReadKeyFile(jwtConfigurationElement, m_phyiscalPath, m_key));
 
 		if (hr == S_OK)
 		{
@@ -394,7 +493,7 @@ HRESULT JwtModuleConfiguration::Reload()
 		}
 	}
 
-	RETURN_IF_FAILED(hr, ReadString(configurationElement, L"key", m_key));
+	RETURN_IF_FAILED(hr, ReadString(jwtConfigurationElement, L"key", m_key));
 
 	return S_OK;
 }

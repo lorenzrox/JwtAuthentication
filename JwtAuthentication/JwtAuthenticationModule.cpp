@@ -1,10 +1,8 @@
-#include "jwt-cpp\jwt.h"
+
 #include "JwtAuthenticationModule.h"
 #include "JwtAuthenticationModuleFactory.h"
 #include "JwtModuleConfiguration.h"
-#include "StringHelper.h"
 
-using jwt_t = jwt::decoded_jwt<jwt::picojson_traits>;
 
 std::string UrlDecode(PCWSTR pStart, PCWSTR pEnd)
 {
@@ -263,86 +261,6 @@ bool CheckAlgorithm(const std::string& algorithm, JwtModuleConfiguration* pConfi
 	return false;
 }
 
-bool ValidateJwtTokenSignature(JwtModuleConfiguration* pConfiguration, const jwt_t& jwtToken)
-{
-	if (jwtToken.has_expires_at())
-	{
-		//Check token expiration
-		auto expiration = jwtToken.get_expires_at();
-		if (expiration < std::chrono::system_clock::now())
-		{
-			return false;
-		}
-	}
-
-	if (!jwtToken.has_algorithm())
-	{
-		return true;
-	}
-
-	auto& key = pConfiguration->GetKey();
-	if (key.empty())
-	{
-		return true;
-	}
-
-	if (!CheckAlgorithm(jwtToken.get_algorithm(), pConfiguration))
-	{
-		return false;
-	}
-
-	std::error_code error;
-
-	switch (pConfiguration->GetAlgorithm())
-	{
-	case JwtCryptoAlgorithm::RS256:
-		jwt::verify().allow_algorithm(jwt::crypto::algorithm::rs256(key)).verify(jwtToken, error);
-		break;
-	default:
-		jwt::verify().allow_algorithm(jwt::crypto::algorithm::hs256(key)).verify(jwtToken, error);
-		break;
-	}
-
-	return static_cast<bool>(error);
-}
-
-bool ValidateJwtTokenPolicies(JwtModuleConfiguration* pConfiguration, const std::string& userName, const std::insensitive_unordered_set<std::string>& roles)
-{
-	auto& policies = pConfiguration->GetPolicies();
-	if (policies.empty())
-	{
-		return true;
-	}
-
-	for (auto& policy : policies)
-	{
-		if (!policy.Users.empty())
-		{
-			if (userName.empty() || policy.Users.find(userName) == policy.Users.end())
-			{
-				continue;
-			}
-		}
-
-		if (policy.Roles.size() > roles.size())
-		{
-			continue;
-		}
-
-		for (auto& role : policy.Roles)
-		{
-			if (roles.find(role) == roles.end())
-			{
-				continue;
-			}
-		}
-
-		return true;
-	}
-
-	return false;
-}
-
 inline REQUEST_NOTIFICATION_STATUS Error(_In_ IHttpContext* pHttpContext, IHttpEventProvider* pProvider, HRESULT hr)
 {
 	pHttpContext->GetResponse()->SetStatus(500, "Server Error", 0, hr);
@@ -400,12 +318,118 @@ JwtAuthenticationModule::~JwtAuthenticationModule()
 
 HRESULT JwtAuthenticationModule::Initialize()
 {
-	if ((m_eventLog = RegisterEventSource(NULL, L"JWT_AUTH")) == NULL)
+	if ((m_eventLog = RegisterEventSource(NULL, L"IIS_JWT_AUTH")) == NULL)
 	{
 		return HRESULT_FROM_WIN32(GetLastError());
 	}
 
 	return S_OK;
+}
+
+bool JwtAuthenticationModule::ValidateJwtTokenSignature(JwtModuleConfiguration* pConfiguration, const jwt_t& jwtToken)
+{
+	if (jwtToken.has_expires_at())
+	{
+		//Check token expiration
+		auto expiration = jwtToken.get_expires_at();
+		if (expiration < std::chrono::system_clock::now())
+		{
+			WriteEventLog(EventLogType::Warning, "JWT token expired");
+			return false;
+		}
+	}
+
+	if (!jwtToken.has_algorithm())
+	{
+		return true;
+	}
+
+	auto& key = pConfiguration->GetKey();
+	if (key.empty())
+	{
+		return true;
+	}
+
+	const auto& algoritm = jwtToken.get_algorithm();
+	if (!CheckAlgorithm(algoritm, pConfiguration))
+	{
+		WriteEventLog(EventLogType::Warning, "JWT token signature algorithm not supported");
+		return false;
+	}
+
+	std::error_code error;
+
+	switch (pConfiguration->GetAlgorithm())
+	{
+	case JwtCryptoAlgorithm::RS256:
+		jwt::verify().allow_algorithm(jwt::crypto::algorithm::rs256(key)).verify(jwtToken, error);
+		break;
+	default:
+		jwt::verify().allow_algorithm(jwt::crypto::algorithm::hs256(key)).verify(jwtToken, error);
+		break;
+	}
+
+	if (error)
+	{
+		WriteEventLog(EventLogType::Warning, "JWT token signature verification failed");
+		return false;
+	}
+
+	return true;
+}
+
+bool JwtAuthenticationModule::ValidateJwtTokenPolicies(JwtModuleConfiguration* pConfiguration, const std::string& userName, const std::insensitive_unordered_set<std::string>& roles)
+{
+	auto& policies = pConfiguration->GetPolicies();
+	if (policies.empty())
+	{
+		return true;
+	}
+
+	for (auto& policy : policies)
+	{
+		if (!policy.Users.empty())
+		{
+			if (userName.empty() || policy.Users.find(userName) == policy.Users.end())
+			{
+				continue;
+			}
+		}
+
+		if (policy.Roles.size() != roles.size())
+		{
+			continue;
+		}
+
+		for (auto& role : policy.Roles)
+		{
+			if (roles.find(role) == roles.end())
+			{
+				continue;
+			}
+		}
+
+		return true;
+	}
+
+	WriteEventLog(EventLogType::Warning, "No authorization policy matched");
+	return false;
+}
+
+void JwtAuthenticationModule::WriteEventLog(EventLogType type, LPCSTR pMessage, HRESULT hr)
+{
+	if (SUCCEEDED(hr))
+	{
+		::ReportEventA(m_eventLog, static_cast<WORD>(type), 0, 1, NULL, 1, 0, &pMessage, NULL);
+	}
+	else
+	{
+		CHAR buffer[4096] = "";
+		LPCSTR strings[2] = { pMessage, buffer };
+
+		::FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, nullptr, hr, MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL), buffer, _countof(buffer), nullptr);
+		::ReportEventA(m_eventLog, static_cast<WORD>(type), 0, 0, NULL, 2, sizeof(hr), strings, &hr);
+	}
 }
 
 HRESULT JwtAuthenticationModule::CreateUser(_In_ IHttpContext* pHttpContext, _Out_ std::unique_ptr<JwtClaimsUser>& result)
@@ -423,6 +447,7 @@ HRESULT JwtAuthenticationModule::CreateUser(_In_ IHttpContext* pHttpContext, _Ou
 	IHttpRequest* httpRequest = pHttpContext->GetRequest();
 	if (_strnicmp("OPTIONS", httpRequest->GetHttpMethod(), 7) == 0)
 	{
+		WriteEventLog(EventLogType::Information, "Skipped authentication for OPTIONS request");
 		return S_OK;
 	}
 
@@ -440,7 +465,11 @@ HRESULT JwtAuthenticationModule::CreateUser(_In_ IHttpContext* pHttpContext, _Ou
 		break;
 	}
 
-	if (!jwt.empty())
+	if (jwt.empty())
+	{
+		WriteEventLog(EventLogType::Warning, "JWT token not found");
+	}
+	else
 	{
 		try
 		{
@@ -506,6 +535,7 @@ HRESULT JwtAuthenticationModule::CreateUser(_In_ IHttpContext* pHttpContext, _Ou
 		}
 		catch (const std::exception& ex)
 		{
+			WriteEventLog(EventLogType::Error, ex.what());
 			return E_FAIL;
 		}
 	}
@@ -524,6 +554,8 @@ REQUEST_NOTIFICATION_STATUS JwtAuthenticationModule::OnBeginRequest(_In_ IHttpCo
 
 	if (FAILED(hr))
 	{
+		WriteEventLog(EventLogType::Error, "An error occurred handling the request", hr);
+
 		return Error(pHttpContext, pProvider, hr);
 	}
 	else if (hr == S_FALSE) {
@@ -547,6 +579,8 @@ REQUEST_NOTIFICATION_STATUS JwtAuthenticationModule::OnAuthenticateRequest(_In_ 
 
 	if (FAILED(hr))
 	{
+		WriteEventLog(EventLogType::Error, "An error occurred handling the request", hr);
+
 		return Error(pHttpContext, pProvider, hr);
 	}
 	else if (hr == S_FALSE) {

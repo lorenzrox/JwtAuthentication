@@ -8,10 +8,53 @@ struct JwtGrantMapping
 	bool Replace;
 };
 
+enum class JwtAuthenticationAccessType
+{
+	Allow = 0,
+	Deny = 1
+};
+
 struct JwtAuthenticationPolicy
 {
 	std::insensitive_unordered_set<std::string> Users;
 	std::insensitive_unordered_set<std::string> Roles;
+	std::unordered_set<std::string> Verbs;
+};
+
+class JwtAuthorizationPolicy
+{
+public:
+	JwtAuthorizationPolicy(std::insensitive_unordered_set<std::wstring>&& users,
+		std::insensitive_unordered_set<std::wstring>&& roles,
+		std::unordered_set<std::string>&& verbs);
+
+	virtual HRESULT Check(_In_ IHttpContext* pContext, _Out_ bool* pResult) = 0;
+
+protected:
+	inline const std::insensitive_unordered_set<std::wstring>& GetUsers() const noexcept
+	{
+		return m_users;
+	}
+
+	inline const std::insensitive_unordered_set<std::wstring>& GetRoles() const noexcept
+	{
+		return m_roles;
+	}
+
+	inline const std::unordered_set<std::string>& GetVerbs() const noexcept
+	{
+		return m_verbs;
+	}
+
+private:
+	std::insensitive_unordered_set<std::wstring> m_users;
+	std::insensitive_unordered_set<std::wstring> m_roles;
+	std::unordered_set<std::string> m_verbs;
+};
+
+class JwtAuthorizationAllowPolicy : public JwtAuthorizationPolicy
+{
+	virtual HRESULT Check(_In_ IHttpContext* pContext, _Out_ bool* pResult);
 };
 
 class JwtModuleConfiguration : IHttpStoredContext

@@ -27,15 +27,20 @@
     <attribute name="nameGrant" type="string" defaultValue="sub" />
     <attribute name="roleGrant" type="string" defaultValue="role" />
     <element name="policies">
-      <collection addElement="add" clearElement="clear">
-        <attribute name="users" type="string" />
-        <attribute name="roles" type="string" />
+      <collection addElement="add" clearElement="clear" removeElement="remove">
+        <attribute name="accessType" type="enum" required="true">
+          <enum name="Allow" value="0" />
+          <enum name="Deny" value="1" />
+        </attribute>
+        <attribute name="users" type="string" isCombinedKey="true" validationType="nonEmptyString"  />
+        <attribute name="roles" type="string" isCombinedKey="true" validationType="nonEmptyString"  />
+        <attribute name="verbs" type="string" caseSensitive="true" isCombinedKey="true" validationType="nonEmptyString"  />
       </collection>
     </element>
     <element name="grantHeaderMappings">
-      <collection addElement="add" clearElement="clear">
-        <attribute name="grant" type="string" required="true" validationType="nonEmptyString" />
-        <attribute name="header" type="string" required="true" validationType="nonEmptyString" />
+      <collection addElement="add" clearElement="clear" removeElement="remove">
+        <attribute name="grant" type="string" isCombinedKey="true" validationType="nonEmptyString" />
+        <attribute name="header" type="string" isCombinedKey="true" validationType="nonEmptyString" />
         <attribute name="replace" type="bool" defaultValue="true" />
       </collection>
     </element>

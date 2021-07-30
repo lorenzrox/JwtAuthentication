@@ -5,9 +5,13 @@
 
 #include "win_crypto.h"
 
+#define JWT_WIN_CRYPTO
+
 #else
 
 #include "openssl_crypto.h"
+
+#define JWT_OPENSSL_CRYPTO
 
 #endif
 
