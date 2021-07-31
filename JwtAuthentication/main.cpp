@@ -32,10 +32,10 @@ HRESULT WINAPI RegisterModule(DWORD dwServerVersion, IHttpModuleRegistrationInfo
 	}
 
 	HRESULT hr;
-	//RETURN_IF_FAILED(hr, pModuleInfo->SetRequestNotifications(moduleFactory.get(), RQ_AUTHENTICATE_REQUEST, RQ_AUTHENTICATE_REQUEST));
+	//RETURN_IF_FAILED(hr, pModuleInfo->SetRequestNotifications(moduleFactory.get(), RQ_AUTHENTICATE_REQUEST | RQ_AUTHORIZE_REQUEST, 0));
 	RETURN_IF_FAILED(hr, pModuleInfo->SetRequestNotifications(moduleFactory.get(), RQ_BEGIN_REQUEST, 0));
 	RETURN_IF_FAILED(hr, pModuleInfo->SetPriorityForRequestNotification(RQ_BEGIN_REQUEST, PRIORITY_ALIAS_HIGH));
-	RETURN_IF_FAILED(hr, pModuleInfo->SetGlobalNotifications(applicationEvents.get(), GL_CONFIGURATION_CHANGE | GL_APPLICATION_START));
+	RETURN_IF_FAILED(hr, pModuleInfo->SetGlobalNotifications(applicationEvents.get(), GL_CONFIGURATION_CHANGE | GL_APPLICATION_START | GL_APPLICATION_STOP));
 
 	moduleFactory.release();
 	applicationEvents.release();

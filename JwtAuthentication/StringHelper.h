@@ -8,6 +8,33 @@
 
 namespace std
 {
+	inline string to_string(LPCWCH pstr, UINT wslen)
+	{
+		int len = ::WideCharToMultiByte(CP_ACP, 0, pstr, wslen, NULL, 0, NULL, NULL);
+
+		std::string dblstr(len, '\0');
+		::WideCharToMultiByte(CP_ACP, 0, pstr, wslen, &dblstr[0], len, NULL, NULL);
+
+		return dblstr;
+	}
+
+	inline string to_string(LPCWCH pstr)
+	{
+		UINT wslen = wcslen(pstr);
+		return to_string(pstr, wslen);
+	}
+
+	inline string to_string(const wstring& str)
+	{
+		return to_string(str.data(), str.size());
+	}
+
+	inline string to_string(BSTR bstr)
+	{
+		UINT wslen = ::SysStringLen(bstr);
+		return to_string(bstr, wslen);
+	}
+
 	inline wstring to_wstring(const string& str, UINT codePage = CP_THREAD_ACP)
 	{
 		int len = ::MultiByteToWideChar(codePage, 0, str.data(), str.size(), NULL, 0);
@@ -34,26 +61,15 @@ namespace std
 		return ::MultiByteToWideChar(codePage, 0, str.data(), str.size(), &result[0], len);
 	}
 
-	inline string to_string(LPCWCH pstr, UINT wslen)
-	{
-		int len = ::WideCharToMultiByte(CP_ACP, 0, pstr, wslen, NULL, 0, NULL, NULL);
-
-		std::string dblstr(len, '\0');
-		::WideCharToMultiByte(CP_ACP, 0, pstr, wslen, &dblstr[0], len, NULL, NULL);
-
-		return dblstr;
-	}
-
-	inline string to_string(BSTR bstr)
-	{
-		UINT wslen = ::SysStringLen(bstr);
-		return to_string(bstr, wslen);
-	}
-
 	inline wstring to_wstring(BSTR bstr)
 	{
 		UINT wslen = ::SysStringLen(bstr);
 		return wstring(bstr, wslen);
+	}
+
+	inline BSTR to_bstring(const std::wstring& str)
+	{
+		return SysAllocStringLen(str.data(), str.size());
 	}
 
 	inline BSTR to_bstring(const std::string& str)

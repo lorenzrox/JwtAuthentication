@@ -2,46 +2,19 @@
 #include "JwtModuleConfiguration.h"
 #include "SWRLock.h"
 
-
-ApplicationEntry::ApplicationEntry(_In_ IHttpApplication* pApplication) :
-	m_configuration(new JwtModuleConfiguration(pApplication->GetApplicationPhysicalPath(), pApplication->GetAppConfigPath()))
-{
-}
-
-ApplicationEntry::~ApplicationEntry()
-{
-	if (m_configuration != NULL)
-	{
-		m_configuration->DereferenceConfiguration();
-		m_configuration = NULL;
-	}
-}
-
-HRESULT ApplicationEntry::Initialize()
-{
-	if (m_configuration == NULL)
-	{
-		return E_OUTOFMEMORY;
-	}
-
-	return m_configuration->Reload();
-}
-
-
 ApplicationEventsModule::ApplicationEventsModule()
 {
 	InitializeSRWLock(&m_srwLock);
 }
 
-HRESULT ApplicationEventsModule::EnsureApplicationEntry(_In_ IHttpApplication* pApplication, _Out_ std::shared_ptr<ApplicationEntry>& result)
+HRESULT ApplicationEventsModule::EnsureApplicationConfiguration(_In_ IHttpApplication* pApplication)
 {
-	std::wstring applicationId = pApplication->GetApplicationId();
+	auto applicationId = pApplication->GetApplicationId();
 
 	{
-		const auto pair = m_applications.find(applicationId);
-		if (pair != m_applications.end())
+		const auto pair = m_configurations.find(applicationId);
+		if (pair != m_configurations.end())
 		{
-			result = pair->second;
 			return S_OK;
 		}
 	}
@@ -49,34 +22,43 @@ HRESULT ApplicationEventsModule::EnsureApplicationEntry(_In_ IHttpApplication* p
 	SRWExclusiveLock writeLock(m_srwLock);
 
 	// Check if other thread created the application
-	const auto pair = m_applications.find(applicationId);
-	if (pair != m_applications.end())
+	const auto pair = m_configurations.find(applicationId);
+	if (pair != m_configurations.end())
 	{
-		result = pair->second;
 		return S_OK;
 	}
 
+	auto contextContainer = pApplication->GetModuleContextContainer();
+	auto currentConfiguration = reinterpret_cast<JwtModuleConfiguration*>(contextContainer->GetModuleContext(g_pModuleId));
+	if (currentConfiguration != NULL)
+	{
+		m_configurations.emplace(applicationId, currentConfiguration);
+		return S_OK;
+	}
 
-	auto application = std::make_shared<ApplicationEntry>(pApplication);
-	if (application == NULL)
+	JwtModuleConfigurationPtr configuration(pApplication->GetApplicationPhysicalPath(), pApplication->GetAppConfigPath());
+	if (configuration == NULL)
 	{
 		return E_OUTOFMEMORY;
 	}
 
 	HRESULT hr;
-	RETURN_IF_FAILED(hr, application->Initialize());
+	RETURN_IF_FAILED(hr, configuration->Reload());
+	RETURN_IF_FAILED(hr, contextContainer->SetModuleContext(configuration.get(), g_pModuleId));
 
-	m_applications.emplace(applicationId, application);
+	configuration->ReferenceConfiguration();
 
-	result = std::move(application);
+	m_configurations.emplace(applicationId, std::move(configuration));
 	return S_OK;
 }
 
-HRESULT ApplicationEventsModule::RemoveApplicationEntry(_In_ LPCWSTR pApplicationId)
+HRESULT ApplicationEventsModule::RemoveApplicationConfiguration(_In_ IHttpApplication* pApplication)
 {
+	auto applicationId = pApplication->GetApplicationId();
+
 	SRWExclusiveLock lock(m_srwLock);
 
-	if (m_applications.erase(pApplicationId) == 0)
+	if (m_configurations.erase(applicationId) == 0)
 	{
 		return S_FALSE;
 	}
@@ -93,8 +75,25 @@ GLOBAL_NOTIFICATION_STATUS ApplicationEventsModule::OnGlobalApplicationStart(_In
 	auto application = pProvider->GetApplication();
 
 	HRESULT hr;
-	JwtModuleConfiguration* pConfiguration;
-	if (FAILED(hr = JwtModuleConfiguration::EnsureConfiguration(application, &pConfiguration)))
+	if (FAILED(hr = EnsureApplicationConfiguration(application)))
+	{
+		pProvider->SetErrorStatus(hr);
+		return GL_NOTIFICATION_HANDLED;
+	}
+
+	return GL_NOTIFICATION_CONTINUE;
+}
+
+GLOBAL_NOTIFICATION_STATUS ApplicationEventsModule::OnGlobalApplicationStop(_In_ IHttpApplicationStopProvider* pProvider)
+{
+#ifdef DEBUG
+	__debugbreak();
+#endif
+
+	auto application = pProvider->GetApplication();
+
+	HRESULT hr;
+	if (FAILED(hr = RemoveApplicationConfiguration(application)))
 	{
 		pProvider->SetErrorStatus(hr);
 		return GL_NOTIFICATION_HANDLED;
@@ -105,21 +104,22 @@ GLOBAL_NOTIFICATION_STATUS ApplicationEventsModule::OnGlobalApplicationStart(_In
 
 GLOBAL_NOTIFICATION_STATUS ApplicationEventsModule::OnGlobalConfigurationChange(_In_ IGlobalConfigurationChangeProvider* pProvider)
 {
-	return GL_NOTIFICATION_CONTINUE;
+#ifdef DEBUG
+	__debugbreak();
+#endif
 
 	PCWSTR pwszChangePath = pProvider->GetChangePath();
 	if (pwszChangePath != NULL && _wcsicmp(pwszChangePath, L"MACHINE/WEBROOT/") > 0)
 	{
 		SRWExclusiveLock lock(m_srwLock);
 
-		auto iterator = m_applications.begin();
-		while (iterator != m_applications.end())
+		auto iterator = m_configurations.begin();
+		while (iterator != m_configurations.end())
 		{
-			auto pConfiguration = iterator->second->GetConfiguration();
-			if (pConfiguration != NULL && pConfiguration->Applies(pwszChangePath))
+			if (iterator->second->Applies(pwszChangePath))
 			{
 				HRESULT hr;
-				if (FAILED(hr = pConfiguration->Reload()))
+				if (FAILED(hr = iterator->second->Reload()))
 				{
 					//Error
 					pProvider->SetErrorStatus(hr);

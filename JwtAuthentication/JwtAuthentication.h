@@ -1,9 +1,9 @@
 #pragma once
 #include "jwt-cpp\jwt.h"
+#include <httpserv.h>
 #include <iostream>
 #include <ws2tcpip.h> 
 #include <Windows.h>
-#include <httpserv.h>
 #include <atlbase.h>
 #include <memory>
 #include <set>
@@ -24,6 +24,12 @@ enum class JwtValidationType {
 enum class JwtCryptoAlgorithm {
 	HS256 = 0,
 	RS256 = 1
+};
+
+enum class JwtAuthenticationAccessType
+{
+	Allow = 0,
+	Deny = 1
 };
 
 enum class EventLogType : WORD

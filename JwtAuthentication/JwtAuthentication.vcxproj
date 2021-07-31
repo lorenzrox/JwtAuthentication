@@ -183,16 +183,17 @@
     <ClInclude Include="JwtAuthentication.h" />
     <ClInclude Include="JwtAuthenticationModule.h" />
     <ClInclude Include="JwtAuthenticationModuleFactory.h" />
+    <ClInclude Include="JwtAuthorizationPolicy.h" />
     <ClInclude Include="JwtClaimsUser.h" />
     <ClInclude Include="JwtModuleConfiguration.h" />
     <ClInclude Include="StringHelper.h" />
     <ClInclude Include="SWRLock.h" />
-    <ClInclude Include="Variant.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ApplicationEventsModule.cpp" />
     <ClCompile Include="JwtAuthenticationModule.cpp" />
     <ClCompile Include="JwtAuthenticationModuleFactory.cpp" />
+    <ClCompile Include="JwtAuthorizationPolicy.cpp" />
     <ClCompile Include="JwtClaimsUser.cpp" />
     <ClCompile Include="JwtModuleConfiguration.cpp" />
     <ClCompile Include="main.cpp" />

@@ -18,6 +18,22 @@ public:
 	virtual HRESULT IsInRole(_In_  PCWSTR  pszRoleName, _Out_ BOOL* pfInRole);
 	virtual PVOID GetUserVariable(_In_ PCSTR pszVariableName);
 
+#pragma push_macro("GetUserName")
+
+#undef GetUserName
+
+	inline const std::wstring GetUserName() const noexcept
+	{
+		return m_userName;
+	}
+
+#pragma pop_macro("GetUserName")
+
+	inline const std::set<std::wstring> GetRoles() const noexcept
+	{
+		return m_roles;
+	}
+
 private:
 	mutable LONG m_refCount;
 	const std::wstring m_userName;

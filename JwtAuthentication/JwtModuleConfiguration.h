@@ -1,5 +1,6 @@
 #pragma once
 #include "JwtAuthentication.h"
+#include "JwtAuthorizationPolicy.h"
 #include "StringHelper.h"
 
 struct JwtGrantMapping
@@ -8,56 +9,7 @@ struct JwtGrantMapping
 	bool Replace;
 };
 
-enum class JwtAuthenticationAccessType
-{
-	Allow = 0,
-	Deny = 1
-};
-
-struct JwtAuthenticationPolicy
-{
-	std::insensitive_unordered_set<std::string> Users;
-	std::insensitive_unordered_set<std::string> Roles;
-	std::unordered_set<std::string> Verbs;
-};
-
-class JwtAuthorizationPolicy
-{
-public:
-	JwtAuthorizationPolicy(std::insensitive_unordered_set<std::wstring>&& users,
-		std::insensitive_unordered_set<std::wstring>&& roles,
-		std::unordered_set<std::string>&& verbs);
-
-	virtual HRESULT Check(_In_ IHttpContext* pContext, _Out_ bool* pResult) = 0;
-
-protected:
-	inline const std::insensitive_unordered_set<std::wstring>& GetUsers() const noexcept
-	{
-		return m_users;
-	}
-
-	inline const std::insensitive_unordered_set<std::wstring>& GetRoles() const noexcept
-	{
-		return m_roles;
-	}
-
-	inline const std::unordered_set<std::string>& GetVerbs() const noexcept
-	{
-		return m_verbs;
-	}
-
-private:
-	std::insensitive_unordered_set<std::wstring> m_users;
-	std::insensitive_unordered_set<std::wstring> m_roles;
-	std::unordered_set<std::string> m_verbs;
-};
-
-class JwtAuthorizationAllowPolicy : public JwtAuthorizationPolicy
-{
-	virtual HRESULT Check(_In_ IHttpContext* pContext, _Out_ bool* pResult);
-};
-
-class JwtModuleConfiguration : IHttpStoredContext
+class JwtModuleConfiguration : public IHttpStoredContext
 {
 public:
 	JwtModuleConfiguration(std::wstring&& phyiscalPath, std::wstring&& configurationPath);
@@ -104,7 +56,7 @@ public:
 		return m_key;
 	}
 
-	inline const std::vector<JwtAuthenticationPolicy>& GetPolicies() const
+	inline const std::vector<std::unique_ptr<JwtAuthorizationPolicy>>& GetPolicies() const
 	{
 		return m_policies;
 	}
@@ -129,7 +81,113 @@ private:
 	std::string m_roleGrant;
 	std::wstring m_configurationPath;
 	std::wstring m_phyiscalPath;
-	std::vector<JwtAuthenticationPolicy> m_policies;
+	std::vector<std::unique_ptr<JwtAuthorizationPolicy>> m_policies;
 	std::insensitive_unordered_map<std::string, const JwtGrantMapping> m_grantMappings;
 };
 
+class JwtModuleConfigurationPtr
+{
+public:
+	JwtModuleConfigurationPtr() :
+		m_ptr(NULL)
+	{
+	}
+
+	JwtModuleConfigurationPtr(std::wstring&& phyiscalPath, std::wstring&& configurationPath) :
+		m_ptr(new JwtModuleConfiguration(std::forward<std::wstring>(phyiscalPath), std::forward<std::wstring>(configurationPath)))
+	{
+	}
+
+	JwtModuleConfigurationPtr(JwtModuleConfiguration* pConfiguration) :
+		m_ptr(pConfiguration)
+	{
+		if (m_ptr != NULL)
+		{
+			m_ptr->ReferenceConfiguration();
+		}
+	}
+
+	~JwtModuleConfigurationPtr()
+	{
+		if (m_ptr != NULL)
+		{
+			m_ptr->DereferenceConfiguration();
+			m_ptr = NULL;
+		}
+	}
+
+	JwtModuleConfigurationPtr(JwtModuleConfigurationPtr&& other) noexcept :
+		m_ptr(NULL)
+	{
+		std::swap(m_ptr, other.m_ptr);
+	}
+
+	JwtModuleConfigurationPtr(const JwtModuleConfigurationPtr& other) :
+		m_ptr(other.m_ptr)
+	{
+		if (m_ptr != NULL)
+		{
+			m_ptr->ReferenceConfiguration();
+		}
+	}
+
+	JwtModuleConfigurationPtr& operator=(JwtModuleConfigurationPtr&& other) noexcept
+	{
+		std::swap(m_ptr, other.m_ptr);
+		return *this;
+	}
+
+	JwtModuleConfigurationPtr& operator=(const JwtModuleConfigurationPtr& other)
+	{
+		if (this != std::addressof(other))
+		{
+			m_ptr = other.m_ptr;
+
+			if (m_ptr != NULL)
+			{
+				m_ptr->ReferenceConfiguration();
+			}
+		}
+
+		return *this;
+	}
+
+	inline JwtModuleConfiguration* get() const noexcept
+	{
+		return m_ptr;
+	}
+
+
+	inline JwtModuleConfiguration* operator->() const noexcept
+	{
+		return m_ptr;
+	}
+
+	explicit operator bool() const noexcept
+	{
+		return m_ptr != NULL;
+	}
+
+	bool operator!() const throw()
+	{
+		return m_ptr == NULL;
+	}
+
+	bool operator<(_In_opt_ JwtModuleConfiguration* ptr) const noexcept
+	{
+		return m_ptr < ptr;
+	}
+
+	bool operator!=(_In_opt_ JwtModuleConfiguration* ptr) const
+	{
+		return !operator==(ptr);
+	}
+
+	bool operator==(_In_opt_ JwtModuleConfiguration* ptr) const noexcept
+	{
+		return m_ptr == ptr;
+	}
+
+private:
+	JwtModuleConfiguration* m_ptr;
+};
